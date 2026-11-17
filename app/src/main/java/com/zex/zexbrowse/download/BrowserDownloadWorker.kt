@@ -47,7 +47,7 @@ internal val DOWNLOAD_USER_AGENT: String by lazy {
 
 class BrowserDownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     private val database = BrowserDatabase.create(appContext)
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder().build()
 
     /** 任务被主动停下：是暂停还是取消，由数据库里的状态标记决定 */
     private class PauseOrCancel : Exception()

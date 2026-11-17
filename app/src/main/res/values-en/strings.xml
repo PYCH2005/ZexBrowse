@@ -167,21 +167,6 @@
     <string name="s156">Pause</string>
     <string name="s157">Resume</string>
     <string name="s158">Queued</string>
-    <string name="dl_view_log">View log</string>
-    <string name="dl_log_title">Download log</string>
-    <string name="dl_log_share">Share log</string>
-    <string name="dl_log_empty">No further log details</string>
-    <string name="dl_log_file">File: %1$s</string>
-    <string name="dl_log_source">Source: %1$s</string>
-    <string name="dl_log_status">Status: %1$s</string>
-    <string name="dl_log_progress">Progress: %1$s%% (%2$s / %3$s)</string>
-    <string name="dl_log_expected_sha256">Expected SHA-256: %1$s</string>
-    <string name="dl_log_actual_sha256">Actual SHA-256: %1$s</string>
-    <string name="dl_log_sha256">SHA-256: %1$s</string>
-    <string name="dl_log_hash_missing">(not generated)</string>
-    <string name="dl_failed_hint">Download failed. See \"More\" for the log.</string>
-    <string name="dl_open_file">Open</string>
-    <string name="dl_cancel_download">Cancel download</string>
     <string name="s159">Downloading</string>
     <string name="s160">Paused</string>
     <string name="s161">Completed</string>
@@ -485,7 +470,6 @@
     <string name="dl_err_empty_body">The download response was empty</string>
     <string name="dl_err_incomplete">The local file is incomplete and cannot be resumed. Please download again.</string>
     <string name="dl_err_no_resume">This location does not support resuming. Please download again.</string>
-    <string name="dl_retry_failed">Retry failed. Please try again later.</string>
     <string name="dl_err_cannot_write">Cannot write to the selected location</string>
     <string name="dl_err_http">Download failed: %1$s</string>
     <string name="dl_err_dir_unavailable">The external download folder is unavailable</string>
@@ -624,6 +608,7 @@
     <string name="ua_desc_android_chrome">Appear as Chrome on Android</string>
     <string name="ua_desc_desktop_chrome">Appear as desktop Chrome; some sites will show the desktop layout</string>
     <string name="ua_desc_desktop_firefox">Appear as desktop Firefox with better compatibility than desktop Chrome</string>
+    <string name="sha256_value">SHA-256: %1$s</string>
     <string name="toast_link_copied">Download link copied</string>
     <string name="toast_download_started">Download started. Check Downloads or the notification shade.</string>
     <string name="update_check_failed">Update check failed: %1$s</string>
@@ -675,9 +660,7 @@
     <string name="risk_reason_known_bad">Known risky site</string>
     <string name="risk_reason_trojan">Suspected trojan or fraud</string>
     <string name="risk_reason_impersonation">Suspected impersonation</string>
-    <string name="risk_reason_fake_site">Known fake site</string>
     <string name="risk_detail_impersonation">This domain closely resembles %1$s but is not its official domain. Such sites are used to steal credentials.</string>
-    <string name="risk_detail_fake_site">This site is a confirmed fake and has been blocked. Do not enter any account or personal information.</string>
     <string name="risk_reason_punycode">Domain uses unusual characters</string>
     <string name="risk_detail_punycode">This domain uses encoded characters and may look almost identical to a real site. Check it carefully.</string>
     <string name="risk_reason_bad_tld">Suspicious domain suffix</string>
@@ -792,4 +775,21 @@
     <string name="mirrorchyan_download_sub">Mainland CDN acceleration; completes in the browser</string>
     <string name="browser_download">Browser download</string>
     <string name="browser_download_sub">Download the GitHub direct-link APK in a browser</string>
+    <string name="cam_permission_title">Allow camera access?</string>
+    <string name="cam_permission_message">%1$s wants to use your camera.</string>
+    <string name="web_dialog_ok">OK</string>
+    <string name="web_dialog_cancel">Cancel</string>
+    <string name="dl_copy_link">Copy link</string>
+    <string name="dl_redownload">Download again</string>
+    <string name="dl_removed">"%1$s" removed</string>
+    <string name="dl_undo">Undo</string>
+    <string name="dl_copied_snackbar">"%1$s" copied to clipboard</string>
+    <!-- One-tap page translation -->
+    <string name="tr_page">Translate page</string>
+    <string name="tr_restore">Restore original</string>
+    <string name="tr_doing">Translating…</string>
+    <string name="tr_done">Translation complete</string>
+    <string name="tr_failed">Translation failed. Check your network.</string>
+    <string name="tr_skip">Nothing to translate on this page</string>
+    <string name="tr_notready">Page hasn\'t finished loading yet</string>
 </resources>

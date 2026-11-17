@@ -29,6 +29,9 @@ import com.zex.zexbrowse.data.SettingsStore
 import com.zex.zexbrowse.data.resolveCustomSearchTemplate
 import com.zex.zexbrowse.media.MediaPlaybackController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -39,8 +42,12 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
+import org.mozilla.geckoview.WebExtension
+import org.json.JSONArray
+import org.json.JSONObject
 import org.mozilla.geckoview.StorageController
 import java.net.URLEncoder
 import java.io.File
@@ -72,6 +79,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val history = database.dao().history()
     private val _tabs = MutableStateFlow<List<BrowserTab>>(emptyList()); val tabs = _tabs.asStateFlow()
     private val _selectedId = MutableStateFlow<String?>(null); val selectedId = _selectedId.asStateFlow()
+    // 正在 HTML5 全屏（视频全屏）的 tab id；null = 无。由 ContentDelegate.onFullScreen 维护
+    private val _fullscreenId = MutableStateFlow<String?>(null); val fullscreenId = _fullscreenId.asStateFlow()
     // 界面层注入：网页/外链触发下载时回调（用于弹出下载确认框）。
     // 冷启动直接打开直链时，该回调可能在界面就绪前就被触发，此时先缓存，待界面注入后补发，避免下载被丢弃。
     private var externalDownloadHandler: ((String) -> Unit)? = null
@@ -82,6 +91,24 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             externalDownloadHandler = value
             while (bufferedExternalDownloads.isNotEmpty()) value(bufferedExternalDownloads.removeFirst())
         }
+    // 界面层注入：某个标签排队了待加载地址，需要把它的会话挂到 GeckoView 上。
+    // 空白标签默认不挂（避免连点新建时每点一次都重挂 compositor），只有这里请求过才挂。
+    // 与 onExternalDownload 一样带缓冲：界面还没就绪时先存着，注入后再补发。
+    var onSessionLoadRequested: ((String) -> Unit)? = null
+        set(value) {
+            field = value
+            if (value != null) {
+                while (pendingSessionAttachRequests.isNotEmpty()) {
+                    value(pendingSessionAttachRequests.removeFirst())
+                }
+            }
+        }
+    private val pendingSessionAttachRequests = ArrayDeque<String>()
+
+    private fun requestSessionAttach(id: String) {
+        val handler = onSessionLoadRequested
+        if (handler != null) handler(id) else pendingSessionAttachRequests.addLast(id)
+    }
     private val riskyNavigationGate = RiskyNavigationGate()
     internal val riskySiteWarnings = riskyNavigationGate.warnings
 
@@ -138,9 +165,19 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     // 界面层注入：网站请求读取剪贴板时回调。参数：发起请求的站点、结果回调（true=允许，false=拒绝）。
     // 是否先询问用户由界面层根据用户的剪贴板读取策略决定，本层只负责转发与返回结果。
     var clipboardReadHandler: ((String, (Boolean) -> Unit) -> Unit)? = null
-    // 界面层注入：网页请求麦克风等媒体权限时回调。参数：发起请求的站点、可用的音频设备、结果回调。
-    // 是否询问用户由界面层根据用户的麦克风策略决定，本层只负责转发与返回结果。
-    var mediaPermissionHandler: ((String, Array<out GeckoSession.PermissionDelegate.MediaSource>, GeckoSession.PermissionDelegate.MediaCallback) -> Unit)? = null
+    // 界面层注入：网页请求麦克风等媒体权限时回调。参数：发起请求的站点、可用摄像头设备（可为 null）、
+    // 可用音频设备（可为 null）、结果回调。摄像头+麦克风混合请求（如视频通话）两者都非空。
+    // 是否询问用户由界面层根据用户的麦克风/摄像头站点策略决定，本层只负责转发与返回结果。
+    var mediaPermissionHandler: ((String, Array<out GeckoSession.PermissionDelegate.MediaSource>?, Array<out GeckoSession.PermissionDelegate.MediaSource>?, GeckoSession.PermissionDelegate.MediaCallback) -> Unit)? = null
+    // 界面层注入：网页 <select> 下拉选择（生日/地区/语言等）时回调，参数：prompt 本体与结果载体。
+    // 之前未实现该回调，GeckoView 走默认 dismiss，表现为「下拉框点击无反应」。
+    var choicePromptHandler: ((GeckoSession.PromptDelegate.ChoicePrompt, GeckoResult<GeckoSession.PromptDelegate.PromptResponse>) -> Unit)? = null
+    // 界面层注入：网页 alert() 提示框时回调。
+    var alertPromptHandler: ((GeckoSession.PromptDelegate.AlertPrompt, GeckoResult<GeckoSession.PromptDelegate.PromptResponse>) -> Unit)? = null
+    // 界面层注入：网页 confirm() 确认框时回调。
+    var confirmPromptHandler: ((GeckoSession.PromptDelegate.ButtonPrompt, GeckoResult<GeckoSession.PromptDelegate.PromptResponse>) -> Unit)? = null
+    // 界面层注入：网页 prompt() 输入框时回调。
+    var textPromptHandler: ((GeckoSession.PromptDelegate.TextPrompt, GeckoResult<GeckoSession.PromptDelegate.PromptResponse>) -> Unit)? = null
     private var browserSettings = BrowserSettings()
     private var cookiePolicyEnabled: Boolean? = null
     private var initialized = false
@@ -182,12 +219,270 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     //   仍会重新提醒——这是安全隐患，不能因为一次点击就长期免提醒。
     private val confirmedSearchHosts = HashMap<String, MutableSet<String>>()
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    // 当前挂在窗口上的 GeckoView（弱引用）：侧滑返回预览需要用它抓一帧画面。
+    // 只存弱引用，页面离开组合、视图销毁后自动失效，不会拖住旧视图。
+    private var geckoViewRef: java.lang.ref.WeakReference<GeckoView>? = null
     // 下载响应体捕获：Gecko 在 onExternalResponse 时已把响应体拉了下来，body 流只在回调期间有效，
     // 必须当场读走存成临时文件。之后下载直接从本地文件落盘，不再用 URL 第二次请求，
     // 从根本上避开柠枺等站点「一次性令牌二次请求 → 403」的问题。
     // key = 下载地址
     private val capturedBodies = ConcurrentHashMap<String, CapturedBody>()
     val selected get() = _tabs.value.firstOrNull { it.id == _selectedId.value }
+
+    // ---------- 页面翻译（一键翻译） ----------
+    // 每个标签一个会话、一个内容脚本端口，翻译状态全部按「tab id」分开记录：
+    //   原生发 collect → JS 按批送出文本段（more）→ 原生批量翻译（PageTranslator）→ 原生发 applyMore → JS 覆盖原文；
+    //   JS 全部批次回填完毕后回 done（带实际替换节点数），原生据此才标记「已翻译」。
+    // 不再有全局自动翻译：是否翻译由每个标签自己维护，切换标签互不影响。
+    private val _translatingIds = MutableStateFlow<Set<String>>(emptySet())
+    val translatingIds = _translatingIds.asStateFlow()
+    // 已完成翻译的 tab id 集合（页面一导航即失效，见 onPageStart）
+    private val _translatedIds = MutableStateFlow<Set<String>>(emptySet())
+    val translatedIds = _translatedIds.asStateFlow()
+    // 翻译流程事件（string res id），UI 消费后调 consumeTranslateEvent() 置空
+    private val _translateEvent = MutableStateFlow<Int?>(null)
+    val translateEvent = _translateEvent.asStateFlow()
+    fun consumeTranslateEvent() { _translateEvent.value = null }
+    // 会话 -> 内容脚本端口（每次页面加载内容脚本都会新连一个，onDisconnect 时清理）
+    private val translatorPorts = HashMap<GeckoSession, WebExtension.Port>()
+    /** 用户手动点了「翻译此页」的会话：只有手动触发才弹 toast，自动翻译保持安静 */
+    private val manualTranslateSessions = mutableSetOf<GeckoSession>()
+    /** 每轮翻译只给一次"页面还没解析完"的重试机会 */
+    private val notReadyRetried = mutableSetOf<GeckoSession>()
+    private var translatorExtensionReady = false
+    /** 已安装的扩展实例：内容脚本的消息委托必须注册在「会话级」控制器上 */
+    private var translatorExtension: WebExtension? = null
+    /** 扩展安装完成前创建的会话，装好后补挂委托 */
+    private val pendingTranslatorSessions = mutableSetOf<GeckoSession>()
+
+    /** 翻译链路日志：只走 logcat（adb logcat -s ZexTranslate），不再落文件 */
+    private fun tlog(msg: String) {
+        android.util.Log.d("ZexTranslate", msg)
+    }
+
+    private val translatorDelegate = object : WebExtension.MessageDelegate {
+        override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
+            tlog("onMessage app=$nativeApp senderSession=${sender.session?.hashCode()} msg=${message}")
+            return GeckoResult.fromValue("ok" as Any)
+        }
+
+        override fun onConnect(port: WebExtension.Port) {
+            tlog("onConnect name=${port.name} senderSession=${port.sender?.session?.hashCode()}")
+            val session = port.sender?.session ?: return
+            mainHandler.post {
+                translatorPorts[session] = port
+                port.setDelegate(object : WebExtension.PortDelegate {
+                    override fun onPortMessage(message: Any, p: WebExtension.Port) {
+                        val json = message as? JSONObject ?: return
+                        mainHandler.post { handleTranslateMessage(session, json) }
+                    }
+                    override fun onDisconnect(p: WebExtension.Port) {
+                        if (translatorPorts[session] === p) translatorPorts.remove(session)
+                    }
+                })
+            }
+        }
+    }
+
+    private fun tabIdOf(session: GeckoSession): String? =
+        _tabs.value.firstOrNull { it.session === session }?.id
+
+    private fun handleTranslateMessage(session: GeckoSession, msg: JSONObject) {
+        val port = translatorPorts[session]
+        val tabId = tabIdOf(session)
+        val manual = manualTranslateSessions.contains(session)
+        fun finishBusy() {
+            if (tabId != null) _translatingIds.value = _translatingIds.value - tabId
+        }
+        when (msg.optString("cmd")) {
+            "hello" -> tlog("content script ready")
+            "diag" -> tlog(
+                "diag lang=${msg.optString("lang")} cand=${msg.optInt("cand")} pick=${msg.optInt("pick")} ${msg.optString("stat")}"
+            )
+            // JS 侧开始一轮翻译：skip=中文页；total=本轮收集到的节点数（随后按批用 more 送过来）
+            "collect" -> {
+                if (msg.optBoolean("notReady")) {
+                    tlog("not ready top=${msg.optBoolean("top")} kids=${msg.optInt("kids")}")
+                    // 用户点得比页面解析早：先等 400ms 抓一次，仍空才提示，别把"还没解析"报成"无需翻译"
+                    if (manual && !notReadyRetried.contains(session) && (tabId == null || tabId in _translatingIds.value)) {
+                        notReadyRetried.add(session)
+                        mainHandler.postDelayed({
+                            runCatching {
+                                translatorPorts[session]?.postMessage(JSONObject().put("cmd", "collect"))
+                            }
+                        }, 400)
+                        return
+                    }
+                    finishBusy()
+                    manualTranslateSessions.remove(session)
+                    if (manual) _translateEvent.value = R.string.tr_notready
+                    return
+                }
+                if (msg.optBoolean("skip")) {
+                    tlog("skip zh page")
+                    finishBusy()
+                    manualTranslateSessions.remove(session)
+                    if (manual) _translateEvent.value = R.string.tr_skip
+                    return
+                }
+                val total = msg.optInt("total", 0)
+                tlog("collect total=$total")
+                if (total <= 0) {
+                    // 页面上没有可翻译的文本：不算翻译完成，也不再占着「正在翻译…」
+                    finishBusy()
+                    manualTranslateSessions.remove(session)
+                    if (manual) _translateEvent.value = R.string.tr_skip
+                }
+            }
+            "more" -> {
+                val texts = msg.optJSONArray("texts")
+                    ?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }
+                    .orEmpty()
+                if (port == null || texts.isEmpty()) return
+                viewModelScope.launch {
+                    tlog("more n=${texts.size}")
+                    val out = translateInBatches(texts)
+                    if (out.isEmpty()) tlog("batch failed")
+                    // 失败也回一个空批次：JS 侧据此推进 pending，避免“正在翻译…”卡死
+                    runCatching {
+                        port.postMessage(
+                            JSONObject()
+                                .put("cmd", "applyMore")
+                                .put("seq", msg.optInt("seq", 0))
+                                .put("texts", JSONArray(out))
+                        )
+                    }
+                }
+            }
+            // JS 全部批次回填完毕：applied 是「真正被替换的节点数」，0 说明一页都没翻到
+            "done" -> {
+                val appliedCount = msg.optInt("applied", 0)
+                finishBusy()
+                manualTranslateSessions.remove(session)
+                tlog("done applied=$appliedCount")
+                if (appliedCount > 0) {
+                    tabId?.let { _translatedIds.value = _translatedIds.value + it }
+                    if (manual) _translateEvent.value = R.string.tr_done
+                } else {
+                    // 没有成功替换任何文本：保持未翻译状态，避免「菜单说还原原文、页面却是英文」
+                    tabId?.let { _translatedIds.value = _translatedIds.value - it }
+                    if (manual) _translateEvent.value = R.string.tr_failed
+                }
+            }
+            "restore" -> {
+                tabId?.let { _translatedIds.value = _translatedIds.value - it }
+                finishBusy()
+            }
+        }
+    }
+
+    /**
+     * 分批翻译：按「≤20 段 / ≤1800 字符」分组，单组失败不影响其它组（失败位填空串，
+     * 内容脚本会跳过空串位、保留原文）。全部组都失败时返回空列表。
+     */
+    private suspend fun translateInBatches(texts: List<String>): List<String> {
+        val groups = mutableListOf<MutableList<Int>>()
+        var cur = mutableListOf<Int>()
+        var chars = 0
+        texts.forEachIndexed { i, t ->
+            // 每批 60 段 / 5200 字符：内容脚本一批 45 段左右，正好落在一个组里，
+            // 不再每批切出两个串行组（少一次往返等待）
+            if (cur.size >= 60 || (chars + t.length > 5200 && cur.isNotEmpty())) {
+                groups += cur
+                cur = mutableListOf()
+                chars = 0
+            }
+            cur += i
+            chars += t.length
+        }
+        if (cur.isNotEmpty()) groups += cur
+
+        val out = MutableList(texts.size) { "" }
+        var okAny = false
+        // 组间并行（真正的并发上限由 PageTranslator 里的信号量控制），
+        // 串行时 5 段的小尾巴也要等前面 20 段翻完才发，白白多一个 RTT
+        val parts = coroutineScope {
+            groups.map { g ->
+                async {
+                    val src = g.map { texts[it] }
+                    var part = PageTranslator.translate(src)
+                    if (part == null || part.size != g.size || part.all { it.isEmpty() }) {
+                        // 失败重试一次（限流多为瞬时），仍失败才记失败批次、保留原文
+                        kotlinx.coroutines.delay(700)
+                        part = PageTranslator.translate(src)
+                    }
+                    part
+                }
+            }.awaitAll()
+        }
+        groups.forEachIndexed { gi, g ->
+            val part = parts[gi]
+            if (part == null || part.size != g.size || part.all { it.isEmpty() }) {
+                tlog("batch failed size=${g.size}")
+                return@forEachIndexed
+            }
+            okAny = true
+            g.forEachIndexed { k, idx -> out[idx] = part[k] }
+        }
+        return if (okAny) out else emptyList()
+    }
+
+    /** 把翻译桥接委托挂到某个会话上（内容脚本的端口/消息只会到达会话级委托） */
+    private fun attachTranslatorToSession(session: GeckoSession) {
+        val ext = translatorExtension
+        if (ext == null) {
+            // 扩展还没装好就先排队，装好后再统一挂载
+            pendingTranslatorSessions.add(session)
+            return
+        }
+        runCatching {
+            session.webExtensionController.setMessageDelegate(ext, translatorDelegate, "zex.translator")
+            tlog("session attached: ${session.hashCode()}")
+            // 后台预热微软翻译 token：真正点「翻译此页」时省掉那次抓页面的等待
+            viewModelScope.launch(Dispatchers.IO) { PageTranslator.prewarm() }
+        }.onFailure { tlog("attach failed: ${it.message}") }
+    }
+
+    /** 安装内置翻译桥接扩展（幂等）：注册内容脚本与消息委托，不弹任何权限提示 */
+    private fun ensureTranslatorExtension() {
+        if (translatorExtensionReady) return
+        translatorExtensionReady = true
+        runtime.webExtensionController.ensureBuiltIn(
+            "resource://android/assets/zex-translator/",
+            "zex-translator@zexbrowse"
+        ).then { ext ->
+            tlog("extension ready: ${ext?.id}")
+            translatorExtension = ext
+            ext?.setMessageDelegate(translatorDelegate, "zex.translator")
+            // 已排队与已有的标签都补挂会话级委托
+            pendingTranslatorSessions.toList().forEach { attachTranslatorToSession(it) }
+            pendingTranslatorSessions.clear()
+            _tabs.value.forEach { attachTranslatorToSession(it.session) }
+            GeckoResult.fromValue(Unit)
+        }
+    }
+
+    /** 菜单入口：已翻译 → 还原原文；未翻译 → 收集文本并翻译（覆盖原文），同时打开全局自动翻译 */
+    fun toggleTranslatePage() {
+        val tab = selected ?: return
+        tlog("toggle: tab=${tab.id} ports=${translatorPorts.size} ext=${translatorExtension?.id}")
+        if (tab.id in _translatedIds.value) {
+            translatorPorts[tab.session]?.postMessage(JSONObject().put("cmd", "restore"))
+            _translatedIds.value = _translatedIds.value - tab.id
+            _translatingIds.value = _translatingIds.value - tab.id
+        } else {
+            val port = translatorPorts[tab.session]
+            if (port == null) {
+                _translateEvent.value = R.string.tr_notready
+                return
+            }
+            // 只翻当前标签：不做全局自动翻译，其它标签保持各自状态
+            manualTranslateSessions.add(tab.session)
+            notReadyRetried.remove(tab.session)
+            _translatingIds.value = _translatingIds.value + tab.id
+            port.postMessage(JSONObject().put("cmd", "collect"))
+        }
+    }
 
     /**
      * 内核版本号（如 "158.0"），用于生成 UA。
@@ -213,6 +508,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     init {
+        // 内置翻译扩展：越早注册，内容脚本越能赶在首个页面加载时生效
+        runCatching { ensureTranslatorExtension() }
+        PageTranslator.debugLog = { tlog("tr: $it") }
         runCatching { lastColorScheme = runtime.settings.getPreferredColorScheme() }
         // 内存压力：释放可重新捕获的后台标签预览图，保留会话及前进/后退历史。
         (application as? ZexBrowseApplication)?.onMemoryPressure = { level ->
@@ -245,13 +543,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun newTab(incognito: Boolean = false, initialUrl: String? = null): GeckoSession {
+    fun newTab(incognito: Boolean = false, initialUrl: String? = null, afterTabId: String? = null): GeckoSession {
         val (session, id) = createSession(incognito)
-        _tabs.value = _tabs.value + BrowserTab(id, session, incognito); _selectedId.value = id
+        // 新标签插在打开它的标签右边（默认为当前选中标签），无锚点时追加到末尾
+        _tabs.value = insertTab(_tabs.value, BrowserTab(id, session, incognito), afterTabId ?: _selectedId.value)
+        _selectedId.value = id
         session.open(runtime)
         if (initialUrl != null) {
             pendingInitialLoads[id] = normalize(initialUrl)
             android.util.Log.d("ZexIntent", "newTab initial url=${pendingInitialLoads[id]} id=$id")
+            requestSessionAttach(id)
             // 首次尝试由挂载回调触发；这里再排一次，防止回调缺失
             mainHandler.postDelayed({ onSessionAttached(id) }, 0)
         }
@@ -275,6 +576,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (pendingInitialLoads.containsKey(tab.id)) return false
         // 复用新标签的首次加载链路：视图可能尚未就绪，交由 pendingInitialLoads 重试确保生效
         pendingInitialLoads[tab.id] = normalize(url)
+        requestSessionAttach(tab.id)
         mainHandler.postDelayed({ onSessionAttached(tab.id) }, 0)
         return true
     }
@@ -292,6 +594,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         } else {
             pendingInitialLoads[blankIncognito.id] = target
             pendingLoadAttempts.remove(blankIncognito.id)
+            requestSessionAttach(blankIncognito.id)
             mainHandler.postDelayed({ onSessionAttached(blankIncognito.id) }, 0)
         }
         return true
@@ -301,7 +604,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     // 仅在尚未开始尝试时触发，后续交给内部重试链，避免重复触发导致重复加载。
     fun onSessionAttached(id: String) {
         attachedSessions.add(id)
-        if (pendingInitialLoads.containsKey(id) && (pendingLoadAttempts[id] ?: 0) == 0) loadPending(id)
+        // 视图刚挂上会话时立刻补一次待加载：之前那次 loadUri 可能因尚未挂载被丢弃，
+        // 不补的话要等 400ms 的重试链，点链接会明显慢半拍。
+        if (pendingInitialLoads.containsKey(id)) loadPending(id)
     }
 
     /**
@@ -313,6 +618,59 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
      */
     fun onSessionDetached(id: String) {
         attachedSessions.remove(id)
+    }
+
+    /**
+     * 抓取当前选中标签的可见画面，用于侧滑返回时的下层预览。
+     *
+     * 为什么用截图而不是真的预渲染 BrowserScreen：
+     * GeckoView 不允许同一个 GeckoSession 同时挂到两个 View（会崩溃或黑屏），
+     * 而侧滑返回需要「下层」同时在场，所以只能拿一帧静态画面顶上。
+     *
+     * 必须走挂在窗口上的那个 GeckoView 抓图（GeckoSession 本身没有 capturePixels，
+     * 只有 GeckoDisplay / GeckoView 有），所以这里持有视图的弱引用。
+     * 抓取必须在视图仍挂载时发起（离开浏览器页之前），失败一律回调 null，
+     * 由调用方回退到主题色背景，不影响返回本身。
+     */
+    fun captureSelectedPreview(onResult: (Bitmap?) -> Unit) {
+        val view = geckoViewRef?.get()
+        val session = selected?.session
+        if (view == null || session == null || view.session !== session) { onResult(null); return }
+        // 首页标签没有网页：它显示的快捷站点、搜索框都是 Compose 画出来的，
+        // 已经包含在窗口快照里；而 GeckoView 此时是空白页（还被 alpha=0 藏起来），
+        // 把它的画面补上去只会把首页盖成一片白。所以首页不提供网页画面。
+        val url = selected?.url.orEmpty()
+        if (url.isBlank() || url == "about:blank") {
+            lastWebViewTopPx = 0
+            lastWebViewHeightPx = 0
+            onResult(null)
+            return
+        }
+        // 顺手记下视图在窗口中的纵向位置与高度：窗口快照里这块是空的
+        // （SurfaceView 的内容不会被合并进窗口像素），预览时要在这里补上网页画面。
+        runCatching {
+            val location = IntArray(2)
+            view.getLocationInWindow(location)
+            lastWebViewTopPx = location[1]
+            lastWebViewHeightPx = view.height
+        }
+        runCatching {
+            view.capturePixels().accept(
+                { bitmap: Bitmap? -> onResult(bitmap) },
+                { _: Throwable? -> onResult(null) }
+            )
+        }.onFailure { onResult(null) }
+    }
+
+    /** 最近一次抓图时网页视图在窗口中的纵向位置与高度（px），用于拼接窗口快照。 */
+    var lastWebViewTopPx: Int = 0
+        private set
+    var lastWebViewHeightPx: Int = 0
+        private set
+
+    /** GeckoView 创建后登记弱引用，供抓图使用（页面离开组合后不会强引用旧视图）。 */
+    fun registerGeckoView(view: GeckoView) {
+        geckoViewRef = java.lang.ref.WeakReference(view)
     }
 
     // 外部链接的待加载地址需重试：视图刚挂载时 display 可能尚未就绪，
@@ -382,8 +740,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     // GeckoView opens it itself. Opening it here throws AssertionError.
     private fun createNewSessionForUri(uri: String, incognito: Boolean): GeckoSession {
         val (session, id) = createSession(incognito)
-        _tabs.value = _tabs.value + BrowserTab(id, session, incognito); _selectedId.value = id
+        // 新标签插在当前选中标签右边，保持视觉顺序与逻辑顺序一致
+        _tabs.value = insertTab(_tabs.value, BrowserTab(id, session, incognito), _selectedId.value)
+        _selectedId.value = id
         return session
+    }
+
+    /** 把新 tab 插入到锚点 tab 后面；锚点为 null 或找不到时追加到末尾。 */
+    private fun insertTab(tabs: List<BrowserTab>, newTab: BrowserTab, anchorId: String?): List<BrowserTab> {
+        if (anchorId == null) return tabs + newTab
+        val idx = tabs.indexOfFirst { it.id == anchorId }
+        if (idx < 0) return tabs + newTab
+        return tabs.subList(0, idx + 1) + newTab + tabs.subList(idx + 1, tabs.size)
     }
 
     private fun createSession(incognito: Boolean): Pair<GeckoSession, String> {
@@ -399,6 +767,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         userAgentOverride(browserSettings)?.let(sessionSettings::userAgentOverride)
         val session = GeckoSession(sessionSettings.build())
+        attachTranslatorToSession(session)
         val id = UUID.randomUUID().toString()
         val connectionSecurity = ConnectionSecurityState()
         // 媒体播放委托：播放时启动前台服务 + 申请音频焦点，停止时释放（修复后台/锁屏音频断续）
@@ -410,6 +779,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 // 否则用户取消一次下载弹窗后，刷新按钮就再也无法重新弹出窗口。
                 if (url.startsWith("http")) {
                     clearPending(id)
+                    // 页面开始新一轮导航：该标签的翻译状态失效（自动翻译会在新页面端口连上后重开）
+                    _translatedIds.value = _translatedIds.value - id
+                    _translatingIds.value = _translatingIds.value - id
                     val pendingDownload = pendingDownloads[id]
                     if (pendingDownload == null || !isSameDownloadTarget(url, pendingDownload)) {
                         pendingDownloads.remove(id)
@@ -455,8 +827,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 val hasCert = securityInfo.certificate != null
                 val secure = securityInfo.isSecure && !securityInfo.isException
                 update(id) { tab ->
-                    // A blocked fake-site page owns its risk; Gecko may still report the previous page.
-                    if (tab.fakeSite != null) tab else tab.copy(
+                    tab.copy(
                         risk = connectionSecurity.onSecurityChange(
                             securityOrigin = securityInfo.origin,
                             isSecure = secure,
@@ -472,6 +843,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         })
         session.setContentDelegate(object : GeckoSession.ContentDelegate {
             override fun onTitleChange(session: GeckoSession, title: String?) { update(id) { it.copy(title = title?.takeIf(String::isNotBlank) ?: it.title) } }
+            override fun onFullScreen(session: GeckoSession, fullscreen: Boolean) {
+                // HTML5 全屏请求（视频全屏等）：记录/清除全屏 tab，界面层据此隐藏顶栏底栏并进入沉浸式
+                if (fullscreen) _fullscreenId.value = id
+                else if (_fullscreenId.value == id) _fullscreenId.value = null
+            }
             override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
                 // 收到下载信号：立即取消可能已排队的「加载失败」，避免下载时误弹错误页
                 cancelPendingFailure(id)
@@ -508,6 +884,55 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 }
                 return result
             }
+
+            // 网页 <select> 下拉选择（X 注册页的生日选择、各站点的地区/语言选择等）
+            override fun onChoicePrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.ChoicePrompt
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse> {
+                val result = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                val handler = choicePromptHandler
+                if (handler == null) { result.complete(prompt.dismiss()); return result }
+                handler(prompt, result)
+                return result
+            }
+
+            // 网页 alert() 提示框。BasePrompt.confirm() 在这版 GeckoView 里是 protected、外部不可调；
+            // alert() 本身无返回值，确认与取消对网页语义一致，用 dismiss() 等价替代。
+            override fun onAlertPrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.AlertPrompt
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse> {
+                val result = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                val handler = alertPromptHandler
+                if (handler == null) { result.complete(prompt.dismiss()); return result }
+                handler(prompt, result)
+                return result
+            }
+
+            // 网页 confirm() 确认框（如「确定退出登录？」）
+            override fun onButtonPrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.ButtonPrompt
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse> {
+                val result = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                val handler = confirmPromptHandler
+                if (handler == null) { result.complete(prompt.dismiss()); return result }
+                handler(prompt, result)
+                return result
+            }
+
+            // 网页 prompt() 输入框
+            override fun onTextPrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.TextPrompt
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse> {
+                val result = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                val handler = textPromptHandler
+                if (handler == null) { result.complete(prompt.dismiss()); return result }
+                handler(prompt, result)
+                return result
+            }
         })
         session.setSelectionActionDelegate(object : GeckoSession.SelectionActionDelegate {
             // 网站请求读取剪贴板：交由界面层弹出询问框（按站点永久记住允许/拒绝），再回传结果。
@@ -537,8 +962,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 callback: GeckoSession.PermissionDelegate.MediaCallback
             ) {
                 // 策略由界面层处理（始终拒绝直接回绝、始终允许直接放行、每次询问先弹窗）
+                // 纯摄像头请求（如 X 人脸验证的 getUserMedia({video})）同样要放行给界面层，
+                // 之前只在音频非空时转发，摄像头请求被直接 reject。
                 val handler = mediaPermissionHandler
-                if (handler != null && audio != null && audio.isNotEmpty()) handler(uri, audio, callback) else callback.reject()
+                val wantAudio = audio != null && audio.isNotEmpty()
+                val wantVideo = video != null && video.isNotEmpty()
+                if (handler != null && (wantAudio || wantVideo)) handler(uri, video, audio, callback) else callback.reject()
             }
         })
         session.setNavigationDelegate(object : GeckoSession.NavigationDelegate {
@@ -599,9 +1028,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                             failedUrl = "",
                             restrictedEngine = null,
                             beforeRestrictedUrl = "",
-                            // 同时刷新扫描结论：地址栏护盾读的是 risk，
-                            // 不一起设就会在禁止访问页上仍显示「安全」
-                            risk = SecurityScanner.assessUrl(uri),
                             fakeSite = hit
                         )
                     }
@@ -632,6 +1058,17 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         it.copy(restrictedEngine = null, beforeRestrictedUrl = "", fakeSite = null)
                     } else it
                 }
+
+                // 一标签一页：用户主动发起的链接点击 → 拦截，开新 tab（插到当前 tab 右边）
+                // 不拦：
+                // - JS 自动跳转、meta refresh、302 重定向（hasUserGesture=false）→ 当前 tab 加载
+                // - 地址栏输入、外部 App 打开（isDirectNavigation=true）→ 当前 tab 加载
+                // - about: / data: / blob: 等非 http scheme → 当前 tab 加载
+                if (userInitiated && !request.isDirectNavigation && isHttpScheme(uri) && pendingInitialLoads[id] != uri) {
+                    runCatching { newTab(incognito, uri, afterTabId = id) }
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+
                 return null
             }
             override fun onSubframeLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
@@ -657,24 +1094,60 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun select(id: String) { _selectedId.value = id }
+
+    /** 退出 HTML5 全屏（视频全屏）：通知页面退出，并立即清掉全屏状态。 */
+    fun exitFullscreen() {
+        val fsId = _fullscreenId.value ?: return
+        _tabs.value.firstOrNull { it.id == fsId }?.session?.exitFullScreen()
+        _fullscreenId.value = null
+    }
+
+    /** 返回按钮是否可用：本 tab 会话历史可后退，或左边还有上一个标签。 */
+    fun canBack(): Boolean {
+        val tab = selected ?: return false
+        if (tab.canGoBack) return true
+        val idx = _tabs.value.indexOfFirst { it.id == tab.id }
+        return idx > 0
+    }
+
+    /** 前进按钮是否可用：本 tab 会话历史可前进，或右边还有下一个标签。 */
+    fun canForward(): Boolean {
+        val tab = selected ?: return false
+        if (tab.canGoForward) return true
+        val idx = _tabs.value.indexOfFirst { it.id == tab.id }
+        return idx >= 0 && idx < _tabs.value.size - 1
+    }
+
     fun close(id: String) {
+        if (_fullscreenId.value == id) _fullscreenId.value = null
         clearPending(id)
         riskyNavigationGate.dismiss(id)
         attachedSessions.remove(id)
+        // 关标签时同步清理翻译状态与端口，避免泄漏到已关闭的会话
+        _translatedIds.value = _translatedIds.value - id
+        _translatingIds.value = _translatingIds.value - id
+        _tabs.value.firstOrNull { it.id == id }?.session?.let {
+            translatorPorts.remove(it)
+            manualTranslateSessions.remove(it)
+        }
         cancelPendingFailure(id)
         pendingDownloads.remove(id)
         blockedExternalUris.remove(id)
-        // 标签已销毁，它记录的搜索引擎确认状态也一并丢掉：
-        // 否则同 id 永不复用但仍会残留，且语义上“关标签 = 结束这次浏览”
         confirmedSearchHosts.remove(id)
         val closing = _tabs.value.firstOrNull { it.id == id }
         runCatching { closing?.session?.close() }
-        _tabs.value = _tabs.value.filterNot { it.id == id }
+        val wasSelected = _selectedId.value == id
+        val oldList = _tabs.value
+        _tabs.value = oldList.filterNot { it.id == id }
         clearIncognitoContextIfEmpty()
-        // 选中项优先落在同类型标签上：无痕标签关完后不能直接跳到普通标签，
-        // 那会让用户以为「无痕标签变成了普通标签」。同类也没有后才回退到剩余任一标签。
-        val sameKind = _tabs.value.lastOrNull { it.incognito == (closing?.incognito ?: false) }
-        _selectedId.value = (sameKind ?: _tabs.value.lastOrNull())?.id
+        if (wasSelected) {
+            val closedIndex = oldList.indexOfFirst { it.id == id }
+            // 按视觉顺序选回左边相邻的同类型 tab；没有左邻（删的是最左标签）则选右边最近的同类型 tab
+            val sameKindPrev = if (closedIndex > 0) oldList.subList(0, closedIndex).lastOrNull { it.incognito == (closing?.incognito ?: false) && it.id != id } else null
+            val sameKindNext = oldList.subList(closedIndex + 1, oldList.size).firstOrNull { it.incognito == (closing?.incognito ?: false) && it.id != id }
+            val sameKind = sameKindPrev ?: sameKindNext
+            _selectedId.value = (sameKind ?: _tabs.value.lastOrNull())?.id
+        }
     }
     // 仅关闭普通标签，不动无痕标签。
     // 不再自动补空白标签：真的关空后由界面层展示「暂无标签」。
@@ -682,6 +1155,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _tabs.value.filter { !it.incognito }.forEach { tab ->
             riskyNavigationGate.dismiss(tab.id)
             attachedSessions.remove(tab.id)
+            // 关标签时同步清理翻译状态与端口，避免泄漏到已关闭的会话
+            _translatedIds.value = _translatedIds.value - tab.id
+            translatorPorts.remove(tab.session)
             confirmedSearchHosts.remove(tab.id)
             runCatching { tab.session.close() }
         }
@@ -692,6 +1168,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _tabs.value.filter { it.incognito }.forEach { tab ->
             riskyNavigationGate.dismiss(tab.id)
             attachedSessions.remove(tab.id)
+            // 关标签时同步清理翻译状态与端口，避免泄漏到已关闭的会话
+            _translatedIds.value = _translatedIds.value - tab.id
+            translatorPorts.remove(tab.session)
             confirmedSearchHosts.remove(tab.id)
             runCatching { tab.session.close() }
         }
@@ -712,6 +1191,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         incognitoTabs.forEach { tab ->
             riskyNavigationGate.dismiss(tab.id)
             attachedSessions.remove(tab.id)
+            // 关标签时同步清理翻译状态与端口，避免泄漏到已关闭的会话
+            _translatedIds.value = _translatedIds.value - tab.id
+            translatorPorts.remove(tab.session)
             confirmedSearchHosts.remove(tab.id)
             runCatching { tab.session.close() }
         }
@@ -896,8 +1378,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                     failedUrl = "",
                     restrictedEngine = null,
                     beforeRestrictedUrl = "",
-                    // 同上：护盾与详情弹窗都依赖 risk
-                    risk = SecurityScanner.assessUrl(target),
                     fakeSite = hit
                 )
             }
@@ -939,6 +1419,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         // 视图尚未挂载：交给待加载重试链，它会在 onPageStart 后自行停止
         pendingInitialLoads[targetTab.id] = target
         pendingLoadAttempts.remove(targetTab.id)
+        requestSessionAttach(targetTab.id)
         mainHandler.postDelayed({ onSessionAttached(targetTab.id) }, 0)
     }
     /** Home searches use a normal blank tab or create a new normal tab. */
@@ -955,19 +1436,53 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         load(input, targetTab)
     }
+    /**
+     * 返回按钮（一标签一页）。
+     *
+     * 只在标签之间切换，不调用 session.goBack()。按视觉顺序选左边相邻标签。
+     */
     fun back(onHome: () -> Unit) {
         val tab = selected ?: return
         if (tab.restrictedEngine != null) {
             val previousUrl = tab.beforeRestrictedUrl
             update(tab.id) { it.copy(url = previousUrl, restrictedEngine = null, beforeRestrictedUrl = "") }
             if (previousUrl.isBlank() || previousUrl == "about:blank") onHome()
-        } else if (tab.fakeSite != null) {
-            // 禁止访问页没有“上一条真实页面”可回（它可能在首屏就被拦），
-            // 统一交给调用方回首页，避免停在被拦地址上
+            return
+        }
+        if (tab.fakeSite != null) {
             update(tab.id) { it.copy(fakeSite = null) }
             onHome()
-        } else tab.session.goBack()
-    }; fun forward() { selected?.session?.goForward() }
+            return
+        }
+        // 单页应用（如 YouTube）在同 tab 内做 pushState 导航，不会开新标签：
+        // 优先回退本 tab 的会话历史，历史走完再切上一个标签
+        if (tab.canGoBack) {
+            tab.session.goBack()
+            return
+        }
+        // 按视觉顺序选左边相邻的同类型 tab（不再走 parentId 父子关系）
+        val sameType = _tabs.value.filter { it.incognito == tab.incognito }
+        val idx = sameType.indexOfFirst { it.id == tab.id }
+        if (idx > 0) select(sameType[idx - 1].id)
+        else onHome()
+    }
+
+    /**
+     * 前进按钮（一标签一页）。
+     *
+     * 按视觉顺序选右边相邻的同类型 tab，不调用 session.goForward()。
+     */
+    fun forward() {
+        val tab = selected ?: return
+        // 与返回对称：本 tab 会话历史可前进时优先前进（覆盖 SPA pushState 导航）
+        if (tab.canGoForward) {
+            tab.session.goForward()
+            return
+        }
+        val sameType = _tabs.value.filter { it.incognito == tab.incognito }
+        val idx = sameType.indexOfFirst { it.id == tab.id }
+        if (idx >= 0 && idx < sameType.size - 1) select(sameType[idx + 1].id)
+    }
 
     /**
      * 该地址所属的搜索引擎是否已被用户确认过。
@@ -1064,28 +1579,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             if (!downloadScheduler.resume(id)) {
                 android.widget.Toast.makeText(getApplication(), getApplication<Application>().getString(R.string.dl_err_no_resume), android.widget.Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    /**
-     * 重试一条已取消或已失败的下载。
-     *
-     * 走「删旧建新」而不是续传：取消时文件已被删、失败时内容不完整，
-     * 拼起来比重新下一遍风险还高。旧记录在新任务成功入队后才清，
-     * 所以列表里不会出现两条同名条目，也不会因为入队失败而连记录都没了。
-     * 不能复用 capturedBodies：那是一次性令牌的本地副本，当时已经消费过了。
-     */
-    fun retryDownload(id: String) {
-        viewModelScope.launch {
-            val ok = runCatching {
-                downloadScheduler.retry(
-                    id,
-                    browserSettings.downloadDirectoryMode == "external",
-                    browserSettings.externalDownloadTreeUri
-                )
-            }.getOrDefault(false)
-            if (!ok) {
-                android.widget.Toast.makeText(getApplication(), getApplication<Application>().getString(R.string.dl_retry_failed), android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1256,6 +1749,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         return userAgent
     }
+
+    private fun isHttpScheme(uri: String): Boolean = uri.startsWith("http://") || uri.startsWith("https://")
 
     private fun normalize(value: String): String {
         val text = value.trim()

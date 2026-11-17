@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 网页语音搜索等需要麦克风；声明但不默认申请，仅在网页实际使用时由系统弹窗询问 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <!-- Android 11+ 包可见性：允许查询处理网页链接的应用与浏览器入口 -->
     <queries>
         <intent>
@@ -38,7 +39,8 @@
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" android:exported="false" tools:node="merge" />
         <!-- 网页媒体播放前台服务：仅在网页实际播放音频/视频时启动 -->
         <service android:name=".media.MediaPlaybackService" android:foregroundServiceType="mediaPlayback" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="stateUnspecified|adjustResize">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="stateUnspecified|adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection|mcc|mnc|touchscreen">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <!-- 允许被系统列为默认浏览器候选：接收 http/https 链接（是否设为默认由用户自愿决定） -->
             <intent-filter>

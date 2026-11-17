@@ -47,7 +47,7 @@ object ApkHashVerifier {
 }
 
 class DownloadManager(private val context: Context) {
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder().build()
 
     /** 更新包存放目录：不进用户下载目录，仅用于应用内更新流程 */
     private fun updateDirectory(): File =

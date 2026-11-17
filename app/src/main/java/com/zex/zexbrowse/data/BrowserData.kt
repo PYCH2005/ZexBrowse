@@ -206,6 +206,8 @@ data class BrowserSettings(
     val sitePermissions: Map<String, String> = emptyMap(),
     /** 麦克风权限按来源记忆，格式同 [sitePermissions] */
     val siteMicPermissions: Map<String, String> = emptyMap(),
+    /** 摄像头权限按来源记忆，格式同 [sitePermissions] */
+    val siteCamPermissions: Map<String, String> = emptyMap(),
     /** 首页搜索框的搜索历史（新→旧，最多保留 10 条） */
     val searchHistory: List<String> = emptyList(),
     /** 安全防护模式：enhanced（增强）/ standard（标准）/ basic（基础） */
@@ -288,6 +290,7 @@ class SettingsStore(private val context: Context) {
     private val sitePermissionsKey = stringPreferencesKey("site_permissions")
     // Host-only decisions cannot be safely assigned to an origin; ask again after upgrading.
     private val siteMicPermissionsKey = stringPreferencesKey("origin_mic_permissions")
+    private val siteCamPermissionsKey = stringPreferencesKey("origin_cam_permissions")
     private val searchHistoryKey = stringPreferencesKey("search_history")
     private val securityModeKey = stringPreferencesKey("security_mode")
     private val httpsOnlyEnabledKey = booleanPreferencesKey("https_only_enabled")
@@ -332,6 +335,10 @@ class SettingsStore(private val context: Context) {
                 .filter { it.isNotBlank() && it.contains('=') }
                 .associate { it.substringBefore('=') to it.substringAfter('=') },
             siteMicPermissions = (preferences[siteMicPermissionsKey] ?: "")
+                .split("\n")
+                .filter { it.isNotBlank() && it.contains('=') }
+                .associate { it.substringBeforeLast('=') to it.substringAfterLast('=') },
+            siteCamPermissions = (preferences[siteCamPermissionsKey] ?: "")
                 .split("\n")
                 .filter { it.isNotBlank() && it.contains('=') }
                 .associate { it.substringBeforeLast('=') to it.substringAfterLast('=') },
@@ -420,6 +427,12 @@ class SettingsStore(private val context: Context) {
         preferences[siteMicPermissionsKey] = (entries + "$key=$value").joinToString("\n")
     }
     suspend fun clearSiteMicPermissions() = update { it[siteMicPermissionsKey] = "" }
+    suspend fun setSiteCamPermission(key: String, value: String) = update { preferences ->
+        val current = preferences[siteCamPermissionsKey] ?: ""
+        val entries = current.split("\n").filter { it.isNotBlank() && it.substringBeforeLast('=') != key }
+        preferences[siteCamPermissionsKey] = (entries + "$key=$value").joinToString("\n")
+    }
+    suspend fun clearSiteCamPermissions() = update { it[siteCamPermissionsKey] = "" }
     suspend fun clearOnExit(enabled: Boolean, cookies: Boolean, cache: Boolean, history: Boolean) = update { preferences ->
         preferences[clearOnExitKey] = enabled
         preferences[clearCookiesOnExitKey] = cookies

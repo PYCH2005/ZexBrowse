@@ -9,7 +9,9 @@
 package com.zex.zexbrowse.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.net.Uri
@@ -19,6 +21,8 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,6 +47,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -60,16 +66,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -90,6 +98,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -101,7 +110,6 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.rounded.Article
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Block
@@ -127,10 +135,7 @@ import androidx.compose.material.icons.rounded.GppGood
 import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.GppBad
 import androidx.compose.material.icons.rounded.LockOpen
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Phishing
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Policy
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
@@ -143,7 +148,6 @@ import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.VolunteerActivism
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomSheetDefaults
@@ -174,8 +178,17 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -188,27 +201,27 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -222,6 +235,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
@@ -250,12 +265,6 @@ import com.zex.zexbrowse.data.LemwoodMirror
 import com.zex.zexbrowse.data.MirrorChyan
 import com.zex.zexbrowse.data.NetworkDiagnostics
 import com.zex.zexbrowse.data.NetworkProbe
-import com.zex.zexbrowse.data.RecommendCategory
-import com.zex.zexbrowse.data.RecommendCategoryMeta
-import com.zex.zexbrowse.data.appsInCategory
-import com.zex.zexbrowse.data.countInCategory
-import com.zex.zexbrowse.data.recommendCategoryMeta
-import com.zex.zexbrowse.data.RecommendedApp
 import com.zex.zexbrowse.data.SettingsStore
 import com.zex.zexbrowse.data.SearchSuggestions
 import com.zex.zexbrowse.data.UpdateChecker
@@ -280,6 +289,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebRequestError
@@ -287,7 +297,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-enum class Page { HOME, APP_RECOMMENDATIONS, BROWSER, INCOGNITO, TABS, SETTINGS, BOOKMARKS, DOWNLOADS, HISTORY, DOWNLOAD_DIRECTORY, GENERAL_SETTINGS, LANGUAGE, SITE_SETTINGS, COOKIE_SETTINGS, HTTPS_ONLY, WEB_PERMISSIONS, SECURITY, ADBLOCK, NOTIFICATION, ADVANCED_SETTINGS, DEBUG, NETWORK_DIAGNOSTICS, SEARCH_ENGINE, USER_AGENT, CUSTOM_USER_AGENT, CLIPBOARD_PERMISSION, MIC_PERMISSION, EXTERNAL_APP_PERMISSION, ABOUT }
+enum class Page { HOME, BROWSER, INCOGNITO, TABS, SETTINGS, BOOKMARKS, DOWNLOADS, HISTORY, DOWNLOAD_DIRECTORY, GENERAL_SETTINGS, LANGUAGE, SITE_SETTINGS, COOKIE_SETTINGS, HTTPS_ONLY, WEB_PERMISSIONS, SECURITY, ADBLOCK, NOTIFICATION, ADVANCED_SETTINGS, DEBUG, NETWORK_DIAGNOSTICS, SEARCH_ENGINE, USER_AGENT, CUSTOM_USER_AGENT, CLIPBOARD_PERMISSION, MIC_PERMISSION, EXTERNAL_APP_PERMISSION, ABOUT }
 
 data class QuickSite(val title: String, val url: String, val icon: String)
 
@@ -344,10 +354,10 @@ private const val SPONSOR_PAGE_URL = "https://ifdian.net/a/ZexWanWu"
  * 不得引用本常量。用固定色而非主题色，是为了让无痕环境始终有一致的视觉特征，
  * 不受用户主题变化影响。
  */
-private val IncognitoAccentColor = Color(0xFF7B4DDB)
+internal val IncognitoAccentColor = Color(0xFF7B4DDB)
 
 /** 无痕深底：无痕首页整页背景 */
-private val IncognitoBarBackground = Color(0xFF2A1B45)
+internal val IncognitoBarBackground = Color(0xFF2A1B45)
 
 /**
  * 无痕浏览页的顶栏/状态栏底色。
@@ -356,14 +366,19 @@ private val IncognitoBarBackground = Color(0xFF2A1B45)
  * 状态栏与地址栏因此连成一片，不会出现「深色状态栏 + 浅紫工具栏」的断层。
  * 用固定色而非半透明叠色，是为了不依赖下层的网页内容，避免浅色/深色网页下颜色飘。
  */
-private val IncognitoTopBarColor = Color(0xFFEDE6FA)
+internal val IncognitoTopBarColor = Color(0xFFEDE6FA)
 
 /** 联系我们的跳转地址 */
 private const val CONTACT_URL = "https://knocket.ai/u/zex"
 
-/** 书签序列化：每行「标题|网址」，与 DataStore 中的存储格式一致 */
+/** 书签序列化：每行「标题<TAB>网址」，与 DataStore 中的存储格式一致。
+ *  分隔符从 '|' 改成制表符：网页标题经常带竖线（如「OPPO Official Site | OPPO Global」），
+ *  以前用 '|' 分隔时标题里的竖线会被当成字段边界，解析出的网址前半截变成标题残渣，
+ *  再点开就被当成搜索词去搜了。标题和网址都不会出现制表符，换掉才彻底稳。 */
 private fun encodeBookmarks(sites: List<QuickSite>): String =
-    sites.joinToString("\n") { "${it.title}|${it.url}" }
+    sites.joinToString("\n") {
+        "${it.title.replace('\t', ' ').replace('\n', ' ').trim()}\t${it.url.trim()}"
+    }
 
 /**
  * 书签反序列化。与旧版快捷站点不同，空数据返回空列表而非默认站点：
@@ -739,83 +754,37 @@ private fun PageErrorView(
     val context = LocalContext.current
     val reasons = remember(errorCode, errorCategory) { describeLoadFailure(context, errorCode, errorCategory) }
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        // 不用 weight 撑满：本列已在 verticalScroll 内，滚动容器给子项的是无限高度约束，
-        // 再用 weight 会触发测量异常。改用固定留白把内容集中在视觉中心偏上。
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(48.dp))
-            // 图标放进圆形色块：纯色图标在大片空白里显得单薄
-            Surface(
-                modifier = Modifier.size(88.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = CircleShape
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.WifiOff,
-                        null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(Modifier.height(20.dp))
-            Text(stringResource(R.string.s000), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            // 网址单独放在一个弱化色块里：长链接不会与标题、按钮的文字混在一起，
-            // 复制地址或核对是否输错都更容易
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Text(
-                    url,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-            Spacer(Modifier.height(24.dp))
-            // 排查建议：逐条做成轻量卡片，比项目符号列表更好扫读
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Default.WifiOff, null, modifier = Modifier.size(52.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.s000), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            // 同步显示请求失败的网址，方便用户核对是否输错或粘贴了错误链接
+            Text(
+                url,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(22.dp))
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 reasons.forEach { reason ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.medium,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Rounded.Info,
-                                null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                reason,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text("•", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(8.dp))
+                        Text(reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.height(28.dp))
+            Button(onClick = onRetry) {
+                Icon(Icons.Default.Refresh, null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.s001))
             }
-            Spacer(Modifier.height(48.dp))
         }
     }
 }
@@ -881,8 +850,14 @@ private fun describeLoadFailure(context: Context, errorCode: Int, errorCategory:
 
 private fun decodeBookmarks(raw: String): List<QuickSite> =
     raw.split("\n").mapNotNull { line ->
-        val title = line.substringBefore('|').trim()
-        val url = line.substringAfter('|', "").trim()
+        val text = line.trim()
+        if (text.isEmpty()) return@mapNotNull null
+        // 新格式用制表符分隔；旧数据是「标题|网址」，且标题里可能本来就有竖线，
+        // 所以旧格式取最后一个 '|' 当分隔符——这样历史脏数据也能被纠正回来。
+        val sep = if (text.contains('\t')) text.indexOf('\t') else text.lastIndexOf('|')
+        if (sep <= 0) return@mapNotNull null
+        val title = text.substring(0, sep).trim()
+        val url = text.substring(sep + 1).trim()
         if (title.isEmpty() || url.isEmpty()) null else QuickSite(title, url, title.take(1))
     }
 
@@ -904,6 +879,57 @@ private fun Context.findActivity(): android.app.Activity? {
         current = current.baseContext
     }
     return null
+}
+
+// 整窗快照：侧滑返回时下层要看到的必须「就是离开前的那个界面」，
+// 所以不能只抓网页画面（那样标签栏、地址栏、底栏都会缺一条），
+// 而是把整个窗口（Compose UI + GeckoView 的画面）一起截成一张图。
+// 失败一律回调 null，由调用方退回只抓网页画面的旧路径。
+private fun captureWindowSnapshot(view: android.view.View, onResult: (android.graphics.Bitmap?) -> Unit) {
+    val activity = view.context.findActivity()
+    val width = view.width
+    val height = view.height
+    if (activity == null || width <= 0 || height <= 0) { onResult(null); return }
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) { onResult(null); return }
+    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+    try {
+        android.view.PixelCopy.request(
+            activity.window,
+            bitmap,
+            { result -> onResult(if (result == android.view.PixelCopy.SUCCESS) bitmap else null) },
+            android.os.Handler(android.os.Looper.getMainLooper())
+        )
+    } catch (t: Throwable) {
+        onResult(null)
+    }
+}
+
+// 侧滑返回的下层画面：窗口快照打底（标签栏、地址栏、底栏都在它里面），
+// 再把网页快照按它当时在窗口里的位置补进中间那块。
+// 两张图都是整屏原样像素，直接按原坐标贴上去即可对齐，不做额外缩放。
+@Composable
+private fun BackPreviewFrame(
+    windowFrame: ImageBitmap?,
+    webFrame: ImageBitmap?,
+    webTop: Int,
+    webHeight: Int,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier) {
+        if (windowFrame != null) {
+            drawImage(windowFrame, dstSize = IntSize(size.width.toInt(), size.height.toInt()))
+        }
+        if (webFrame != null) {
+            // 窗口快照抓不到 GeckoView 的 Surface 内容，那块是空的，用网页画面填上。
+            val top = if (webHeight > 0) webTop else 0
+            val height = if (webHeight > 0) webHeight else size.height.toInt()
+            drawImage(
+                image = webFrame,
+                dstOffset = IntOffset(0, top),
+                dstSize = IntSize(size.width.toInt(), height)
+            )
+        }
+    }
 }
 
 // 判断本应用是否为系统默认浏览器：系统会把网页链接的默认 handler 指向默认浏览器
@@ -974,13 +1000,40 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
     // 网页请求麦克风时待回传的引擎回调与设备 id；pendingMicSite 非空表示正在弹「是否允许」站点询问框
     val pendingMicCallback = remember { mutableStateOf<GeckoSession.PermissionDelegate.MediaCallback?>(null) }
     val pendingMicId = remember { mutableStateOf<String?>(null) }
+    // 麦克风系统权限询问所附带的摄像头设备 id（混合请求时，麦克风放行要一并带上摄像头）
+    val pendingMicVideoId = remember { mutableStateOf<String?>(null) }
     var pendingMicSite by remember { mutableStateOf<String?>(null) }
     val micPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val callback = pendingMicCallback.value
         val microphoneId = pendingMicId.value
+        val videoId = pendingMicVideoId.value
         pendingMicCallback.value = null
         pendingMicId.value = null
-        if (callback != null) { if (granted) callback.grant(null, microphoneId) else callback.reject() }
+        pendingMicVideoId.value = null
+        if (callback != null) { if (granted) callback.grant(videoId, microphoneId) else callback.reject() }
+    }
+    // 网页请求摄像头时待回传的引擎回调与设备 id（X 人脸验证等 getUserMedia({video}) 请求）
+    val pendingCamCallback = remember { mutableStateOf<GeckoSession.PermissionDelegate.MediaCallback?>(null) }
+    val pendingCamId = remember { mutableStateOf<String?>(null) }
+    // 摄像头请求里附带的麦克风设备 id（视频通话=摄像头+麦克风，放行时一并回传）
+    val pendingCamMicId = remember { mutableStateOf<String?>(null) }
+    var pendingCamSite by remember { mutableStateOf<String?>(null) }
+    val camPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val callback = pendingCamCallback.value
+        val cameraId = pendingCamId.value
+        val micId = pendingCamMicId.value
+        pendingCamCallback.value = null
+        pendingCamId.value = null
+        pendingCamMicId.value = null
+        if (callback == null) return@rememberLauncherForActivityResult
+        if (!granted) { callback.reject(); return@rememberLauncherForActivityResult }
+        // 摄像头已授权；混合请求里麦克风若还没系统授权，续问麦克风（launcher 回传时一并回传摄像头）
+        if (micId != null && !hasRecordAudioPermission(context)) {
+            pendingMicCallback.value = callback
+            pendingMicId.value = micId
+            pendingMicVideoId.value = cameraId
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else callback.grant(cameraId, micId)
     }
     // 首启提示里「设置外部存储」直接调起系统目录选择器并保存授权
     val externalDirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -998,12 +1051,28 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
             localNetworkPermissionLauncher.launch("android.permission.ACCESS_LOCAL_NETWORK")
         }
     }
-    var navStack by rememberSaveable { mutableStateOf(listOf(Page.HOME)) }
+    var navStack by rememberSaveable { mutableStateOf(listOf(Page.BROWSER)) }
     // 导航方向：true=前进（入栈），false=后退（出栈）。
     // 不能靠比较栈深度推断（状态更新时序不可靠），而是在导航时显式记录。
     var navForward by remember { mutableStateOf(true) }
     val page = navStack.last()
-    val navigate: (Page) -> Unit = { navForward = true; navStack = navStack + it }
+    // 侧滑返回时的下层画面：离开浏览器页的那一刻抓两帧存下来。
+    // 目标页是浏览器时不能真的预渲染 BrowserScreen——同一个 GeckoSession 不能同时挂到两个
+    // GeckoView（会崩溃或黑屏），所以只能拿静态画面顶上。为什么要两张：
+    // - 窗口快照拿得到标签栏/地址栏/底栏这些 Compose UI，但 GeckoView 的 Surface、内容不在窗口像素里，
+    //   它那块是空的；
+    // - 网页快照拿得到网页本身，却只有网页、没有那几条栏。
+    // 把窗口快照铺满、再把网页快照盖到它中间那块空位上，合起来才等于「离开前的完整界面」。
+    var backPreview by remember { mutableStateOf<ImageBitmap?>(null) }
+    var backWebPreview by remember { mutableStateOf<ImageBitmap?>(null) }
+    // 抓整窗快照要用当前窗口的 View，取一次即可（navigate 是长生命周期 lambda）。
+    val captureSourceView = LocalView.current
+    val navigate: (Page) -> Unit = { target ->
+        // 不再在离开浏览器页时抓图：浏览器页现在常驻最底层，返回时露出的就是真实界面。
+        // （之前的「窗口快照 + 网页快照拼接」只在浏览器页会被销毁重建时才需要。）
+        navForward = true
+        navStack = navStack + target
+    }
     val goBack: () -> Unit = { if (navStack.size > 1) { navForward = false; navStack = navStack.dropLast(1) } }
     var tabsIncognito by remember { mutableStateOf(false) }
     var startupUpdate by remember { mutableStateOf<ReleaseInfo?>(null) }
@@ -1013,8 +1082,6 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
     var showLanguageSheet by remember { mutableStateOf(false) }
     // 首次启动引导：提醒下载目录为内部存储（仅首次，读取已持久化的真实值，避免默认初始值误触发）
     var showFirstRunStorageHint by remember { mutableStateOf(false) }
-    // 首启引导第二弹：推荐将 ZexBrowse 设为默认浏览器（在外部存储提示之后，仅首启展示一次）
-    var showDefaultBrowserPrompt by remember { mutableStateOf(false) }
     // 本应用是否已被用户设为默认浏览器（用于决定是否展示设置项入口）
     var isDefaultBrowser by remember { mutableStateOf(isAppDefaultBrowser(context)) }
 
@@ -1027,10 +1094,10 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
         // 此时若无条件 newTab 就会出现两个标签页（原问题是两个空白页）。
         // 仅当当前标签已经加载过内容（非空白）时，才新建标签，避免覆盖用户正在看的网页。
         if (browserViewModel.loadExternalUrl(target)) {
-            navStack = listOf(Page.HOME, Page.BROWSER)
+            navStack = listOf(Page.BROWSER)
         } else {
             browserViewModel.newTab(initialUrl = target)
-            navStack = listOf(Page.HOME, Page.BROWSER)
+            navStack = listOf(Page.BROWSER)
         }
         onIncomingUrlHandled()
     }
@@ -1038,19 +1105,6 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
     // 进入应用、切回前台（含从系统默认应用设置返回）时重新检测默认浏览器状态：
     // 已是默认则不显示入口；用户改选了其它浏览器后入口重新出现
     val lifecycleOwner = LocalLifecycleOwner.current
-    // 首启引导：外部存储提示处理完后，再询问是否设为默认浏览器（两步互斥，避免弹窗叠加）
-    LaunchedEffect(settings.storageHintShown, settings.downloadDirectoryMode, isDefaultBrowser) {
-        if (settings.defaultBrowserHintShown || isDefaultBrowser) return@LaunchedEffect
-        if (showFirstRunStorageHint) return@LaunchedEffect
-        // 外部存储提示尚在等待处理（目录仍为内部存储且从未提示过）时先让位，
-        // 否则已有外部存储的老用户会因 storageHintShown 永远为 false 而永远不触发
-        val storageHintPending = !settings.storageHintShown && settings.downloadDirectoryMode == "internal"
-        if (storageHintPending) return@LaunchedEffect
-        if (startupUpdate != null) return@LaunchedEffect
-        if (settingsStore.settings.first().defaultBrowserHintShown) return@LaunchedEffect
-        kotlinx.coroutines.delay(600)
-        if (startupUpdate == null && !isAppDefaultBrowser(context)) showDefaultBrowserPrompt = true
-    }
     DisposableEffect(lifecycleOwner, navStack.last()) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) isDefaultBrowser = isAppDefaultBrowser(context)
@@ -1095,40 +1149,68 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
             AppLocale.remember(context, stored)
         }
     }
-    // 网页请求麦克风 → 按「网页权限管理 → 麦克风权限」策略处理：
-    // 始终拒绝直接回绝，始终允许直接放行，每次询问则弹窗并把选择按站点记住。
-    // 放行前必须持有系统录音权限：未授权时先走系统询问，用户允许后才回传引擎。
-    browserViewModel.mediaPermissionHandler = { uri, audio, callback ->
-        val microphoneId = audio.firstOrNull()?.id
+    // 网页请求媒体权限（麦克风/摄像头）→ 分两路处理：
+    // 纯麦克风：按「网页权限管理 → 麦克风权限」策略（全局策略+站点记忆）；
+    // 含摄像头（X 人脸验证 getUserMedia({video})、视频通话）：站点级询问+记忆，系统 CAMERA 权限未授时先问系统。
+    browserViewModel.mediaPermissionHandler = { uri, video, audio, callback ->
         val site = microphoneOrigin(uri)
-        val grantOrRequestSystem = {
-            if (hasRecordAudioPermission(context)) callback.grant(null, microphoneId)
-            else {
-                pendingMicCallback.value = callback
-                pendingMicId.value = microphoneId
-                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        val cameraId = video?.firstOrNull()?.id
+        val microphoneId = audio?.firstOrNull()?.id
+        // 站点级许可都已到位后，补齐系统运行时权限再回传引擎
+        val grantMediaNow: () -> Unit = {
+            val needCam = cameraId != null && !hasCameraPermission(context)
+            val needMic = microphoneId != null && !hasRecordAudioPermission(context)
+            when {
+                // 两个系统权限都缺：先问摄像头，摄像头 launcher 回传后会自动续问麦克风
+                needCam -> { pendingCamCallback.value = callback; pendingCamId.value = cameraId; pendingCamMicId.value = microphoneId; camPermissionLauncher.launch(Manifest.permission.CAMERA) }
+                needMic -> { pendingMicCallback.value = callback; pendingMicId.value = microphoneId; pendingMicVideoId.value = cameraId; micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+                else -> callback.grant(cameraId, microphoneId)
             }
         }
         scope.launch {
             val stored = settingsStore.settings.first()
-            when (stored.micPolicy) {
-                "allow" -> grantOrRequestSystem()
-                "deny" -> callback.reject()
-                else -> when {
-                    site == null -> callback.reject()
-                    stored.siteMicPermissions[site] == "allow" -> grantOrRequestSystem()
-                    stored.siteMicPermissions[site] == "deny" -> callback.reject()
+            if (site == null) { callback.reject(); return@launch }
+            if (video != null && video.isNotEmpty()) {
+                when (stored.siteCamPermissions[site]) {
+                    "deny" -> callback.reject()
+                    "allow" -> grantMediaNow()
                     else -> {
+                        // 该站点尚未记住摄像头选择：弹站点询问框（选择可按站点记住）
+                        pendingCamCallback.value = callback
+                        pendingCamId.value = cameraId
+                        pendingCamMicId.value = microphoneId
+                        pendingCamSite = site
+                    }
+                }
+            } else {
+                val grantOrRequestSystem = {
+                    if (hasRecordAudioPermission(context)) callback.grant(null, microphoneId)
+                    else {
                         pendingMicCallback.value = callback
                         pendingMicId.value = microphoneId
-                        pendingMicSite = site
+                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+                when (stored.micPolicy) {
+                    "allow" -> grantOrRequestSystem()
+                    "deny" -> callback.reject()
+                    else -> when {
+                        stored.siteMicPermissions[site] == "allow" -> grantOrRequestSystem()
+                        stored.siteMicPermissions[site] == "deny" -> callback.reject()
+                        else -> {
+                            pendingMicCallback.value = callback
+                            pendingMicId.value = microphoneId
+                            pendingMicSite = site
+                        }
                     }
                 }
             }
         }
     }
     LaunchedEffect(settings.autoCheckUpdates) {
-        if (settings.autoCheckUpdates) {
+        // Release 版不再自动检查更新、不弹「发现新版本」面板；
+        // 调试版保留，方便验证更新链路。设置页的「立即检查」在两端都可用，由用户主动触发。
+        if (BuildConfig.DEBUG && settings.autoCheckUpdates) {
             val checker = UpdateChecker()
             startupUpdate = runCatching { checker.latest() }.getOrNull()?.takeIf { checker.isNewer(it.version) }
         }
@@ -1175,18 +1257,30 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
     // 手势进行中：true 时下层渲染目标页，使页面滑走时露出的是真实的目标页而非空白
     var backActive by remember { mutableStateOf(false) }
     // 本次手势将要返回到的页面（无页面可退时为默认值，不参与渲染）
-    var backTarget by remember { mutableStateOf(Page.HOME) }
-    // 返回是否可以拦截：有可退的页面栈，或浏览器可后退。
+    var backTarget by remember { mutableStateOf(Page.BROWSER) }
+    // 落地后的冻结帧开关：页面切换会把整棵子树（含 GeckoView）重建，
+    // 重建到画出第一帧之间是纯底色，看上去就是「白一下，网页突然出现」。
+    // 打开它就用返回前抓的截图顶住这几帧，然后淡出交给真实页面。
+    var backHold by remember { mutableStateOf(false) }
+    // 返回是否可以拦截：有可退的页面栈，或浏览器可后退（含父子链切换、history、兄弟切换）。
     // 侧滑手势与实体返回键共用同一套判定。
-    val canHandleBack = navStack.size > 1 || (page == Page.BROWSER && (browserViewModel.selected?.canGoBack == true || browserViewModel.selected?.restrictedEngine != null || browserViewModel.selected?.fakeSite != null))
+    val fullscreenTabId by browserViewModel.fullscreenId.collectAsState()
+    val browserInFullscreen = page == Page.BROWSER && fullscreenTabId != null && fullscreenTabId == browserViewModel.selected?.id
+    val browserCanBack = page == Page.BROWSER && (
+        browserViewModel.canBack() ||
+        browserViewModel.selected?.restrictedEngine != null ||
+        browserViewModel.selected?.fakeSite != null
+    )
+    val canHandleBack = navStack.size > 1 || browserCanBack || browserInFullscreen
     // 浏览器（搜索结果）页不启用侧滑跟手动画：退出搜索页时保持原有的页面切换动画，
     // 由 BackHandler 接管即可，其余页面不受影响。
     val predictiveEnabled = canHandleBack && page != Page.BROWSER
     val performBack: () -> Unit = {
-        if (page == Page.BROWSER && (browserViewModel.selected?.canGoBack == true || browserViewModel.selected?.restrictedEngine != null || browserViewModel.selected?.fakeSite != null)) {
-            browserViewModel.back { navForward = false; navStack = listOf(Page.HOME) }
-        } else {
-            goBack()
+        when {
+            // 全屏视频时返回 = 退出全屏，不切标签
+            browserInFullscreen -> browserViewModel.exitFullscreen()
+            browserCanBack -> browserViewModel.back { navForward = false; navStack = listOf(Page.BROWSER) }
+            else -> goBack()
         }
     }
     // 计算并启用下层目标页；浏览器内先后退网页时页面不变，无需预渲染。
@@ -1194,8 +1288,7 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
     // 而 GeckoView 不允许同一 session 同时挂到两个 View，否则会崩溃或黑屏。
     // 浏览器页需要预渲染时改为显示纯色背景，同样比空白自然。
     val beginBack: () -> Unit = {
-        val browserCanGoBack = page == Page.BROWSER && (browserViewModel.selected?.canGoBack == true || browserViewModel.selected?.restrictedEngine != null || browserViewModel.selected?.fakeSite != null)
-        if (!browserCanGoBack && navStack.size > 1) {
+        if (!browserCanBack && navStack.size > 1) {
             backTarget = navStack[navStack.size - 2]
             backActive = true
         }
@@ -1207,6 +1300,14 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
         // 实体/三键返回不走整页跟手动画，确保标志处于关闭状态，避免影响常规页面切换动画
         predictivePop = false
         performBack()
+    }
+
+    // 冻结帧只顶住重建那几帧，随后自动淡出；无上限会一直盖住已经画好的真实页面。
+    LaunchedEffect(backHold) {
+        if (backHold) {
+            kotlinx.coroutines.delay(260)
+            backHold = false
+        }
     }
 
     // 预测性返回：系统开始侧滑时持续推送进度，据此实时位移页面，
@@ -1223,10 +1324,12 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
                 if (!backActive && event.progress > 0f) beginBack()
                 backProgress.snapTo(event.progress)
             }
-            // 手势完成：把整页顺完滑出屏幕，然后换页。
+            // 手势完成：把上层这一页顺完滑出屏幕，然后换页。
             backProgress.animateTo(1f, tween(100))
+            // 不需要冻结帧了：浏览器页常驻在最底层，换页只是把上层内容置为透明占位，
+            // GeckoView 从不销毁重建，也就不存在「重建到首帧之间的白帧」。
             // 先标记「跳过页面切换动画」，再执行返回。
-            // 此时上层整页已在屏幕外，屏幕上看到的是下层预渲染的目标页。
+            // 此时上层整页已在屏幕外，屏幕上看到的是下面常驻的真实页面。
             predictivePop = true
             performBack()
             withContext(NonCancellable) {
@@ -1324,8 +1427,35 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
         CompositionLocalProvider(LocalVibrantTheme provides isVibrantTheme(settings.colorTheme)) {
         Surface {
             Box(Modifier.fillMaxSize()) {
-                // 下层：手势进行中预先渲染目标页，让滑走时能看到真实的目标页面而不是空白。
+                // 最底层：浏览器页常驻。
+                // 为什么让它常驻：GeckoView 的挂载很贵，以前每次进设置/下载/标签都会把整棵页面
+                // 子树（含 GeckoView）销毁，返回时再重建，重建到画出第一帧之间是纯底色，
+                // 只能靠截图顶住白帧。常驻之后，进页面只是往上压一层、返回只是上层滑走，
+                // 全程都是真界面，不再需要任何截图。
+                PageContent(
+                    destination = Page.BROWSER,
+                    settings = settings,
+                    searchHistory = settings.searchHistory,
+                    settingsStore = settingsStore,
+                    browserViewModel = browserViewModel,
+                    scope = scope,
+                    context = context,
+                    isDefaultBrowser = isDefaultBrowser,
+                    requestDefaultBrowser = requestDefaultBrowser,
+                    micPermissionLauncher = micPermissionLauncher,
+                    tabsIncognito = tabsIncognito,
+                    onTabsIncognitoChange = { tabsIncognito = it },
+                    navigate = navigate,
+                    resetToHome = { navForward = false; navStack = listOf(Page.BROWSER) },
+                    resetToHomeImmediately = { browserExitReset++; navForward = false; navStack = listOf(Page.BROWSER) },
+                    goBack = goBack,
+                    onSponsor = { sponsorInfo = true },
+                    onLanguage = { showLanguageSheet = true }
+                )
+
+                // 中层：手势进行中预先渲染目标页，让滑走时能看到真实的目标页面而不是空白。
                 // 仅在 beginBack() 之后有内容，平时完全不参与组合，不影响性能。
+                // 目标页是浏览器时不需要这一层：常驻的浏览器页本身就是真界面。
                 if (backActive) {
                     Box(Modifier.fillMaxSize()) {
                         if (canPreviewTarget) {
@@ -1343,17 +1473,15 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
                                 tabsIncognito = tabsIncognito,
                                 onTabsIncognitoChange = { tabsIncognito = it },
                                 navigate = navigate,
-                                resetToHome = { navForward = false; navStack = listOf(Page.HOME) },
-                                resetToHomeImmediately = { browserExitReset++; navForward = false; navStack = listOf(Page.HOME) },
+                                resetToHome = { navForward = false; navStack = listOf(Page.BROWSER) },
+                                resetToHomeImmediately = { browserExitReset++; navForward = false; navStack = listOf(Page.BROWSER) },
                                 goBack = goBack,
                                 onSponsor = { sponsorInfo = true },
                                 onLanguage = { showLanguageSheet = true }
                             )
-                        } else {
-                            // 目标为浏览器页：不能重复创建 GeckoView，用主题背景色占位，
-                            // 比露出纯空白更自然，也不会出现白色闪屏。
-                            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface))
                         }
+                        // 目标为浏览器页时不铺任何东西：常驻在下面的浏览器页就是真实界面，
+                        // 以前这里要拼「窗口快照 + 网页快照」两层图来顶替，已经不需要了。
                     }
                 }
 
@@ -1397,35 +1525,75 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
                             transitionSpec = {
                                 if (predictivePop) {
                                     EnterTransition.None togetherWith ExitTransition.None using null
+                                } else if (navForward) {
+                                    // 前进（进设置 / 下载记录 / 标签等）：下层页面保持原地不动，
+                                    // 新页面从右侧覆盖着滑进来。视觉上是「一层新界面压上来」，
+                                    // 而不是两层一起左移——后者会让网页看起来被推走了，不连贯。
+                                    val enter = slideIntoContainer(
+                                        AnimatedContentTransitionScope.SlideDirection.Left,
+                                        animationSpec = tween(300, easing = FastOutSlowInEasing)
+                                    )
+                                    (enter togetherWith ExitTransition.KeepUntilTransitionsFinished).apply {
+                                        // 新页面必须盖在旧页面上面，否则会看到旧的网页从新页下方露出
+                                        targetContentZIndex = 1f
+                                    }
                                 } else {
-                                    val direction = if (navForward) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
-                                    slideIntoContainer(direction, animationSpec = tween(260)) togetherWith slideOutOfContainer(direction, animationSpec = tween(260))
+                                    // 返回：上层这一页向右滑走，下层原地不动。
+                                    // 这正是「覆盖滑入」的反向 —— 新页不进来，旧页退出去，
+                                    // 露出来的下层就是常驻的真实界面（浏览器页 / 设置页等）。
+                                    EnterTransition.None togetherWith slideOutOfContainer(
+                                        AnimatedContentTransitionScope.SlideDirection.Right,
+                                        animationSpec = tween(260, easing = FastOutSlowInEasing)
+                                    )
                                 }
                             },
                             label = "page"
                         ) { destination ->
-                            PageContent(
-                                destination = destination,
-                                settings = settings,
-                                searchHistory = settings.searchHistory,
-                                settingsStore = settingsStore,
-                                browserViewModel = browserViewModel,
-                                scope = scope,
-                                context = context,
-                                isDefaultBrowser = isDefaultBrowser,
-                                requestDefaultBrowser = requestDefaultBrowser,
-                                micPermissionLauncher = micPermissionLauncher,
-                                tabsIncognito = tabsIncognito,
-                                onTabsIncognitoChange = { tabsIncognito = it },
-                                navigate = navigate,
-                                resetToHome = { navForward = false; navStack = listOf(Page.HOME) },
-                                resetToHomeImmediately = { browserExitReset++; navForward = false; navStack = listOf(Page.HOME) },
-                                goBack = goBack,
-                                onSponsor = { sponsorInfo = true },
-                                onLanguage = { showLanguageSheet = true }
-                            )
+                            if (destination == Page.BROWSER) {
+                                // 透明占位：真正的浏览器界面在最底层常驻。
+                                // 这里绝不能再渲染一次 BrowserScreen —— 同一个 GeckoSession
+                                // 不能同时挂在两个 GeckoView 上。
+                                Box(Modifier.fillMaxSize())
+                            } else {
+                                PageContent(
+                                    destination = destination,
+                                    settings = settings,
+                                    searchHistory = settings.searchHistory,
+                                    settingsStore = settingsStore,
+                                    browserViewModel = browserViewModel,
+                                    scope = scope,
+                                    context = context,
+                                    isDefaultBrowser = isDefaultBrowser,
+                                    requestDefaultBrowser = requestDefaultBrowser,
+                                    micPermissionLauncher = micPermissionLauncher,
+                                    tabsIncognito = tabsIncognito,
+                                    onTabsIncognitoChange = { tabsIncognito = it },
+                                    navigate = navigate,
+                                    resetToHome = { navForward = false; navStack = listOf(Page.BROWSER) },
+                                    resetToHomeImmediately = { browserExitReset++; navForward = false; navStack = listOf(Page.BROWSER) },
+                                    goBack = goBack,
+                                    onSponsor = { sponsorInfo = true },
+                                    onLanguage = { showLanguageSheet = true }
+                                )
+                            }
                         }
                     }
+                }
+                // 落地后的冻结帧：返回提交会重建整棵页面子树（含 GeckoView），
+                // 从重建到画出第一帧之间是纯底色，看上去就是「白一下，网页突然出现」。
+                // 这段过渡继续用返回前抓的那张截图顶住，再淡出交给真实页面。
+                AnimatedVisibility(
+                    visible = backHold,
+                    enter = EnterTransition.None,
+                    exit = fadeOut(tween(180))
+                ) {
+                    BackPreviewFrame(
+                        windowFrame = backPreview,
+                        webFrame = backWebPreview,
+                        webTop = browserViewModel.lastWebViewTopPx,
+                        webHeight = browserViewModel.lastWebViewHeightPx,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
                 // 管理标签页的状态栏不额外铺色：只让状态栏图标跟随主题，
                 // 避免出现「深紫状态栏 + 浅色页面」的撞色（截图 2）
@@ -1487,26 +1655,6 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
                     dismissButton = { TextButton(onClick = { showFirstRunStorageHint = false; scope.launch { settingsStore.storageHintShown(true) } }) { Text(stringResource(R.string.s041)) } }
                 )
             }
-            // 首启引导第二弹：外部存储提示处理完（或无需提示）后询问是否设为默认浏览器
-            if (showDefaultBrowserPrompt && startupUpdate == null && !showFirstRunStorageHint) {
-                // 显式标注 () -> Unit：末尾 scope.launch 返回 Job，存进变量后类型会被推成 () -> Job
-                val dismissDefaultBrowserPrompt: () -> Unit = {
-                    showDefaultBrowserPrompt = false
-                    scope.launch { settingsStore.defaultBrowserHintShown(true) }
-                }
-                AlertDialog(
-                    onDismissRequest = dismissDefaultBrowserPrompt,
-                    title = { Text(stringResource(R.string.s042)) },
-                    text = { Text(stringResource(R.string.s043)) },
-                    confirmButton = {
-                        Button(onClick = {
-                            dismissDefaultBrowserPrompt()
-                            requestDefaultBrowser()
-                        }) { Text(stringResource(R.string.s044)) }
-                    },
-                    dismissButton = { TextButton(onClick = dismissDefaultBrowserPrompt) { Text(stringResource(R.string.s041)) } }
-                )
-            }
             // 网页请求麦克风且策略为「每次询问」时：按站点询问并记住选择。
             // 允许时若系统尚未授权，则转为系统询问（保留 pendingMicCallback，交给 launcher 回传结果）。
             val micSite = pendingMicSite
@@ -1530,6 +1678,49 @@ fun ZexBrowseApp(incomingUrl: String? = null, incomingUrlSeq: Long = 0L, onIncom
                     text = { Text(stringResource(R.string.s046, micSite)) },
                     confirmButton = { TextButton(onClick = { finishMic(true, true) }) { Text(stringResource(R.string.s047)) } },
                     dismissButton = { TextButton(onClick = { finishMic(false, true) }) { Text(stringResource(R.string.s048)) } }
+                )
+            }
+            // 网页请求摄像头且该站点尚未记住选择时：按站点询问并记住（X 人脸验证、视频通话等）。
+            // 允许时若系统尚未授权摄像头，则转为系统询问（保留 pendingCamCallback，交给 launcher 回传结果）。
+            val camSite = pendingCamSite
+            if (camSite != null) {
+                val finishCam: (Boolean, Boolean) -> Unit = { allow, remember ->
+                    val callback = pendingCamCallback.value
+                    val cameraId = pendingCamId.value
+                    val micId = pendingCamMicId.value
+                    if (remember) scope.launch {
+                        settingsStore.setSiteCamPermission(camSite, if (allow) "allow" else "deny")
+                        // 混合请求（摄像头+麦克风）：两类的站点记忆一起写，避免下次重复询问
+                        if (micId != null) settingsStore.setSiteMicPermission(camSite, if (allow) "allow" else "deny")
+                    }
+                    pendingCamSite = null
+                    if (!allow) {
+                        pendingCamCallback.value = null; pendingCamId.value = null; pendingCamMicId.value = null
+                        callback?.reject()
+                    } else {
+                        val needCam = cameraId != null && !hasCameraPermission(context)
+                        val needMic = micId != null && !hasRecordAudioPermission(context)
+                        when {
+                            // 摄像头系统权限未授：保留 pending 状态，launcher 回传后自动续问麦克风
+                            needCam -> camPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            needMic -> {
+                                pendingCamCallback.value = null; pendingCamId.value = null; pendingCamMicId.value = null
+                                pendingMicCallback.value = callback; pendingMicId.value = micId; pendingMicVideoId.value = cameraId
+                                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                            else -> {
+                                pendingCamCallback.value = null; pendingCamId.value = null; pendingCamMicId.value = null
+                                callback?.grant(cameraId, micId)
+                            }
+                        }
+                    }
+                }
+                AlertDialog(
+                    onDismissRequest = { finishCam(false, false) },
+                    title = { Text(stringResource(R.string.cam_permission_title)) },
+                    text = { Text(stringResource(R.string.cam_permission_message, camSite)) },
+                    confirmButton = { TextButton(onClick = { finishCam(true, true) }) { Text(stringResource(R.string.s047)) } },
+                    dismissButton = { TextButton(onClick = { finishCam(false, true) }) { Text(stringResource(R.string.s048)) } }
                 )
             }
         }
@@ -1578,14 +1769,9 @@ private fun PageContent(
             },
             onHistory = { navigate(Page.HISTORY) },
             onSettings = { navigate(Page.SETTINGS) },
-            onAppRecommendations = { navigate(Page.APP_RECOMMENDATIONS) },
             // 首页头部标签按钮：显示当前普通标签数量，点击进入标签管理
             tabCount = browserViewModel.tabs.collectAsState().value.count { !it.incognito },
             onTabs = { onTabsIncognitoChange(false); navigate(Page.TABS) }
-        )
-        Page.APP_RECOMMENDATIONS -> AppRecommendationsScreen(
-            browserViewModel = browserViewModel,
-            onBack = goBack
         )
         Page.INCOGNITO -> IncognitoHomeScreen(
             onSearch = { address ->
@@ -1611,10 +1797,9 @@ private fun PageContent(
             onIncognitoHome = { navigate(Page.INCOGNITO) },
             onDownloads = { navigate(Page.DOWNLOADS) },
             onSettings = { navigate(Page.SETTINGS) },
-            // 关掉最后一个标签（或点叉号）后回首页，而不是停在新建的 about 空白页；
-            // 无痕环境同样回首页（首页会自动按当前模式进无痕入口）
+            // 关掉最后一个标签后回浏览器页（BROWSER 会自动补空白 tab 并显示 HomeTabContent）
             onAllTabsClosed = resetToHome,
-            // 无痕标签被全部关掉：彻底退出无痕（清 Cookie/缓存）后回首页
+            // 无痕标签被全部关掉：彻底退出无痕（清 Cookie/缓存）后回浏览器页
             onExitIncognito = { tabId ->
                 resetToHomeImmediately()
                 browserViewModel.close(tabId)
@@ -1947,12 +2132,11 @@ private fun ClockText() {
  * @param onOpen 提交搜索或打开网址
  * @param onHistory 进入历史页
  * @param onSettings 进入设置页
- * @param onAppRecommendations 进入应用推荐页
  * @param tabCount 当前标签数量，用于头部标签按钮的徽标
  * @param onTabs 从首页进入标签管理
  */
 @Composable
-private fun HomeScreen(settings: BrowserSettings, searchHistory: List<String>, onRemoveSearchHistory: (String) -> Unit, setQuickSites: (String) -> Unit, onOpen: (String) -> Unit, onHistory: () -> Unit, onSettings: () -> Unit, onAppRecommendations: () -> Unit, tabCount: Int = 0, onTabs: () -> Unit = {}) {
+private fun HomeScreen(settings: BrowserSettings, searchHistory: List<String>, onRemoveSearchHistory: (String) -> Unit, setQuickSites: (String) -> Unit, onOpen: (String) -> Unit, onHistory: () -> Unit, onSettings: () -> Unit, tabCount: Int = 0, onTabs: () -> Unit = {}) {
     // 首页可能复用无痕标签；输入内容不能写入 Activity 的 savedInstanceState。
     var query by remember { mutableStateOf("") }
     val bookmarks = remember(settings.quickSites) { decodeBookmarks(settings.quickSites) }
@@ -2060,6 +2244,8 @@ private fun HomeScreen(settings: BrowserSettings, searchHistory: List<String>, o
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .statusBarsPadding()
+                // 键盘弹起时整体抬升：建议列表底与键盘之间留出空隙，下方书签仍可滚动查看
+                .imePadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -2081,9 +2267,6 @@ private fun HomeScreen(settings: BrowserSettings, searchHistory: List<String>, o
                         searchBottom = pos.y + coords.size.height
                     }
             )
-
-            Spacer(Modifier.height(20.dp))
-            AppRecommendationEntry(vibrant = vibrant, onClick = onAppRecommendations)
 
             Spacer(Modifier.height(24.dp))
             // 常用站点标题行：左边标题 + 数量，右边「添加」
@@ -2151,262 +2334,182 @@ private fun HomeScreen(settings: BrowserSettings, searchHistory: List<String>, o
 }
 
 /**
- * 应用推荐页的屏幕状态。
+ * 首页主体内容（搜索框 + 应用推荐 + 书签网格 + 渐变背景）。
  *
- * 用单一枚举而非「可空 Boolean + 布尔派生」的原因：Crossfade 过渡期间会同时
- * 组合并绘制退出与进入两份内容，若退出那份回头去读一个已经变了的变量，
- * 就会在过渡中画出错误的状态（表现为加载完成后闪一下报错页）。
- * 枚举把每个状态固化成独立值，退出内容始终重放它自己的状态。
+ * 供 BrowserScreen 的「空白 tab」嵌套使用。与独立 HomeScreen 的区别：
+ * - 没有 HomeHeader（logo + 标签按钮），BrowserScreen 自己已有 topBar（标签条）
+ * - 没有 statusBarsPadding，BrowserScreen 的 topBar 已处理状态栏
+ * - 搜索 onOpen 直接调 viewModel.load()，不再 navigate(Page.BROWSER)
  */
-private enum class RecommendScreenState { LOADING, OFFLINE, READY }
-
-/**
- * 应用推荐列表页。
- *
- * 下载行为沿用本应用已有的下载体系：
- * - APK 直链 → 走应用内下载（下载目录遵循「下载设置」的配置）；
- * - 网页/网盘类链接 → 交给系统处理，由系统默认浏览器或用户选择的应用打开。
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun AppRecommendationsScreen(browserViewModel: BrowserViewModel, onBack: () -> Unit) {
-    // 当前打开的分类；为 null 时展示分类卡片列表
-    var openCategory by remember { mutableStateOf<RecommendCategory?>(null) }
-    // 屏幕状态：加载中 / 不通 / 已就绪
-    var screenState by remember { mutableStateOf(RecommendScreenState.LOADING) }
-    // 重试计数：每次点重试递增，驱动下面的 LaunchedEffect 重新探测
-    var probeAttempt by remember { mutableStateOf(0) }
+private fun HomeTabContent(
+    settings: BrowserSettings,
+    searchHistory: List<String>,
+    onRemoveSearchHistory: (String) -> Unit,
+    setQuickSites: (String) -> Unit,
+    onOpen: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var query by remember { mutableStateOf("") }
+    val bookmarks = remember(settings.quickSites) { decodeBookmarks(settings.quickSites) }
+    var showQuickSiteDialog by remember { mutableStateOf(false) }
+    var editingBookmark by remember { mutableStateOf<QuickSite?>(null) }
 
-    // 分类页是应用推荐内部的二级页面：返回键与侧滑返回应先退回分类列表。
-    // 本回调注册在页面层，晚于外层整页返回的回调注册，因此优先级更高；
-    // 若不加这一层，系统返回会直接弹出导航栈里的本页，表现为「跳回首页」。
-    BackHandler(enabled = openCategory != null) {
-        openCategory = null
-    }
+    val focusManager = LocalFocusManager.current
+    var searchFocused by remember { mutableStateOf(false) }
+    var searchTop by remember { mutableStateOf(0f) }
+    var searchBottom by remember { mutableStateOf(0f) }
 
-    // 已进入分类页：直接交给分类页，本页不再渲染任何内容
-    val category = openCategory
-    if (category != null) {
-        RecommendCategoryScreen(
-            category = category,
-            browserViewModel = browserViewModel,
-            onBack = { openCategory = null }
-        )
-        return
-    }
+    val gradientTransition = rememberInfiniteTransition(label = "homeTabGradient")
+    val gradientPhase by gradientTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 6_500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "homeTabGradientPhase"
+    )
+    val vibrant = isVibrantTheme(settings.colorTheme)
 
-    LaunchedEffect(probeAttempt) {
-        screenState = RecommendScreenState.LOADING
-        // 瞬时失败很常见（DNS 未就绪、首个连接被重置、弱网丢包）。
-        // 若第一次失败就写 OFFLINE，Crossfade 会真的把报错页画出来，
-        // 等第二次成功再淡入内容，用户看到的就是「瞬间报错页随后正常」。
-        // 因此失败不写状态，先静默重试；两次都失败才确定是不通。
-        var ok = NetworkProbe.isReachable()
-        if (!ok) {
-            kotlinx.coroutines.delay(600)
-            ok = NetworkProbe.isReachable()
-        }
-        screenState = if (ok) RecommendScreenState.READY else RecommendScreenState.OFFLINE
-    }
-
-    // 警示牌默认展开，由用户手动收起。
-    // 状态用 remember 而非 rememberSaveable：离开页面时组合被销毁，
-    // 重新进入会重建并回到展开状态，避免上次的收起状态粘住。
-    var noticeExpanded by remember { mutableStateOf(true) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.s062)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, stringResource(R.string.s063)) } }
+    Box(
+        modifier
+            .fillMaxSize()
+            .dismissFocusOnOutsideTap(
+                searchFocused,
+                focusManager,
+                inputYRange = if (searchBottom > searchTop) searchTop..searchBottom else null
             )
+    ) {
+        val surfaceColor = MaterialTheme.colorScheme.surface
+        val primaryTone = MaterialTheme.colorScheme.primaryContainer
+        val tertiaryTone = MaterialTheme.colorScheme.tertiaryContainer
+        val secondaryTone = MaterialTheme.colorScheme.secondaryContainer
+        val topTone: Color
+        val midTone: Color
+        val lowTone: Color
+        if (vibrant) {
+            val pal = vibrantPalette
+            val size = pal.size
+            val pos = gradientPhase * size
+            fun paletteAt(offset: Float): Color {
+                val p = (pos + offset) % size
+                val i = p.toInt().coerceIn(0, size - 1)
+                val frac = p - i
+                return androidx.compose.ui.graphics.lerp(pal[i], pal[(i + 1) % size], frac)
+            }
+            topTone = paletteAt(0f)
+            midTone = paletteAt(size / 3f)
+            lowTone = paletteAt(size * 2f / 3f)
+        } else {
+            topTone = androidx.compose.ui.graphics.lerp(primaryTone, tertiaryTone, gradientPhase * 0.5f)
+            midTone = androidx.compose.ui.graphics.lerp(tertiaryTone, secondaryTone, gradientPhase * 0.5f)
+            lowTone = androidx.compose.ui.graphics.lerp(secondaryTone, primaryTone, gradientPhase)
         }
-    ) { padding ->
-        // 三态 Crossfade：key 直接是屏幕状态本身，退出内容始终重放它自己的
-        // 状态值，不会再回头读到「已经变成 READY」的变量而画成报错页
-        Crossfade(
-            targetState = screenState,
-            animationSpec = tween(durationMillis = 320),
-            label = "recommendationsCrossfade"
-        ) { state ->
-            when (state) {
-                // 探测中：形变指示器自带官方容器背景（圆形色块），
-                // 不传 polygons 即使用官方的 7 种默认形状序列
-                RecommendScreenState.LOADING -> Box(
-                    Modifier.fillMaxSize().padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        ContainedLoadingIndicator(modifier = Modifier.size(64.dp))
-                        Spacer(Modifier.height(20.dp))
-                        Text(
-                            stringResource(R.string.recommend_loading),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+        val topAlpha = if (vibrant) 0.42f else 0.80f
+        val midAlpha = if (vibrant) 0.26f else 0.45f
+        val lowAlpha = if (vibrant) 0.14f else 0.22f
+        val tailAlpha = if (vibrant) 0.05f else 0.06f
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.00f to topTone.copy(alpha = topAlpha),
+                        0.18f to midTone.copy(alpha = midAlpha),
+                        0.38f to lowTone.copy(alpha = lowAlpha),
+                        0.62f to androidx.compose.ui.graphics.lerp(lowTone, surfaceColor, 0.5f).copy(alpha = tailAlpha),
+                        0.82f to surfaceColor.copy(alpha = 0.35f),
+                        1.00f to surfaceColor
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                // 键盘弹起时整体抬升：建议列表底与键盘之间留出空隙，下方书签仍可滚动查看
+                .imePadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 搜索框
+            AddressInput(
+                value = query,
+                onValueChange = { query = it },
+                onSubmit = { onOpen(query) },
+                searchHistory = searchHistory,
+                onRemoveHistory = onRemoveSearchHistory,
+                onSearchFocusChange = { searchFocused = it },
+                modifier = Modifier.padding(top = 18.dp)
+                    .onGloballyPositioned { coords ->
+                        val pos = coords.positionInRoot()
+                        searchTop = pos.y
+                        searchBottom = pos.y + coords.size.height
                     }
-                }
-                // 不通：给出提示与重试入口
-                RecommendScreenState.OFFLINE -> Box(
-                    Modifier.fillMaxSize().padding(padding).padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Rounded.CloudOff,
-                            null,
-                            modifier = Modifier.size(44.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        Text(
-                            stringResource(R.string.recommend_offline),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(Modifier.height(18.dp))
-                        FilledTonalButton(onClick = { probeAttempt++ }) {
-                            Text(stringResource(R.string.recommend_retry))
-                        }
-                    }
-                }
-                // 就绪：分类卡片列表，点击进入各分类详情页
-                RecommendScreenState.READY -> LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item {
-                        Text(stringResource(R.string.s064), style = MaterialTheme.typography.titleMedium)
-                    }
-                    item {
-                        Text(stringResource(R.string.s065), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    // 法规与服务调整警示牌：置于列表标题之后、分类卡片之前。
-                    // 收起/展开由警示牌自己在内部处理，列表下方内容随之伸缩。
-                    item {
-                        RecommendationServiceNotice(
-                            expanded = noticeExpanded,
-                            onToggle = { noticeExpanded = !noticeExpanded }
-                        )
-                    }
-                    items(recommendCategoryMeta.size) { index ->
-                        val meta = recommendCategoryMeta[index]
-                        val count = countInCategory(meta.category)
-                        if (count > 0) {
-                            RecommendationCategoryCard(
-                                meta = meta,
-                                count = count,
-                                iconIndex = index,
-                                onClick = { openCategory = meta.category }
+            )
+
+            Spacer(Modifier.height(24.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.s060), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    if (bookmarks.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Text(
+                                bookmarks.size.toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                             )
                         }
                     }
-                    // 网络提示置于列表末尾：完整读完推荐内容后才看到，且与上述
-                    // 法规警示牌（errorContainer）区分开，用中性色不抢注意力
-                    item { RecommendationNetworkNotice() }
+                }
+                FilledTonalButton(onClick = { showQuickSiteDialog = true }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
+                    Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.s061))
                 }
             }
-        }
-    }
-}
-
-/**
- * 分类详情页：展示单一分类下的推荐条目。
- *
- * 下载/弹窗逻辑与原先的推荐页一致，只是作用范围缩到该分类：
- * - APK 直链 → 应用内下载；
- * - 网页/网盘 → 二次说明后交给系统浏览器；
- * - 弹窗状态全部留在本页，返回分类列表时自然丢弃。
- */
-@Composable
-private fun RecommendCategoryScreen(
-    category: RecommendCategory,
-    browserViewModel: BrowserViewModel,
-    onBack: () -> Unit
-) {
-    val context = LocalContext.current
-    var detail by remember { mutableStateOf<RecommendedApp?>(null) }
-    var downloadingApp by remember { mutableStateOf<RecommendedApp?>(null) }
-    var downloadId by remember { mutableStateOf<String?>(null) }
-    var browserNoticeApp by remember { mutableStateOf<RecommendedApp?>(null) }
-
-    val meta = recommendCategoryMeta.firstOrNull { it.category == category }
-    val apps = remember(category) { appsInCategory(category) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(meta?.titleRes ?: R.string.s062)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, stringResource(R.string.s063)) } }
+            Spacer(Modifier.height(12.dp))
+            BookmarkGrid(
+                sites = bookmarks,
+                vibrant = vibrant,
+                onOpen = onOpen,
+                onEdit = { editingBookmark = it },
+                onDelete = { site -> setQuickSites(encodeBookmarks(bookmarks.filter { it.url != site.url })) }
             )
-        }
-    ) { padding ->
-        if (apps.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    stringResource(R.string.recommend_cat_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(apps.size) { index ->
-                    val app = apps[index]
-                    RecommendationCard(app = app, iconIndex = index) { detail = app }
-                }
-            }
+            Spacer(Modifier.height(24.dp))
         }
     }
 
-    detail?.let { app ->
-        RecommendationInfoDialog(
-            app = app,
-            onDownload = {
-                detail = null
-                when {
-                    app.isApk -> {
-                        downloadingApp = app
-                        browserViewModel.enqueueDownload(app.downloadUrl, app.fileName, "") { id -> downloadId = id }
-                    }
-                    // 网页/网盘类链接：先弹二次说明（下载步骤、网盘提取码等），确认后再交给系统打开
-                    app.browserNotice != null -> browserNoticeApp = app
-                    else -> openInBrowser(context, app.downloadUrl)
-                }
+    if (showQuickSiteDialog) {
+        BookmarkDialog(
+            onSubmit = { site ->
+                setQuickSites(encodeBookmarks(bookmarks + site))
+                showQuickSiteDialog = false
             },
-            onDismiss = { detail = null }
+            onDismiss = { showQuickSiteDialog = false }
         )
     }
 
-    downloadingApp?.let { app ->
-        // 下载列表的订阅只发生在弹窗内部：下载过程中进度每秒会更新多次，
-        // 若在页面层订阅，每次更新都会让下面整个推荐卡片列表重组，产生卡顿。
-        RecommendationDownloadDialogHost(
-            app = app,
-            downloads = browserViewModel.downloads,
-            downloadId = downloadId,
-            onInstall = { record -> openDownload(context, record) },
-            onCancelDownload = {
-                // 按地址定位任务：记录 Id 可能还没回填，但地址一定是对的
-                browserViewModel.cancelAndRemoveDownloadByUrl(app.downloadUrl)
+    val editing = editingBookmark
+    if (editing != null) {
+        BookmarkDialog(
+            initial = editing,
+            onSubmit = { site ->
+                setQuickSites(encodeBookmarks(bookmarks.map { if (it.url == editing.url) site else it }))
+                editingBookmark = null
             },
-            onDismiss = { downloadingApp = null; downloadId = null }
-        )
-    }
-
-    val noticeApp = browserNoticeApp
-    val notice = noticeApp?.browserNotice
-    if (noticeApp != null && notice != null) {
-        BrowserNoticeDialog(
-            notice = notice,
-            onOpen = { browserNoticeApp = null; openInBrowser(context, noticeApp.downloadUrl) },
-            onDismiss = { browserNoticeApp = null }
+            onDismiss = { editingBookmark = null }
         )
     }
 }
@@ -2558,385 +2661,6 @@ private val KNOWN_BROWSERS = setOf(
     "com.kiwibrowser.browser", "com.explore.web.browser", "com.hsv.freeadblockerbrowser",
     "com.jamal2367.maxthonbrowser", "com.leesc.chrome", "org.chromium.webview_shell"
 )
-
-/**
- * 推荐分类卡片：图标 + 分类名 + 条目数 + 进入箭头。
- *
- * 与条目卡片同一套视觉语言（同圆角、同内边距），但用 secondaryContainer
- * 图标底板区分层级，一眼能看出它不是单个应用。
- */
-@Composable
-private fun RecommendationCategoryCard(
-    meta: RecommendCategoryMeta,
-    count: Int,
-    iconIndex: Int = 0,
-    onClick: () -> Unit
-) {
-    // 缤纷色彩下每个分类拿不同颜色
-    val (catBg, catFg) = cardIconColors(LocalVibrantTheme.current, iconIndex)
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(44.dp),
-                color = catBg,
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(meta.icon, null, tint = catFg)
-                }
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(meta.titleRes), fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(
-                    stringResource(R.string.recommend_cat_count, count),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Icon(Icons.Default.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-/**
- * 法规与服务调整警示牌。
- *
- * 用 errorContainer 而非 error，保证在深浅色下都能读且不至于像错误弹窗那样刺眼。
- * 可收起：收起后只保留图标与标题，正文则随动效伸缩。
- * 点击无水波纹：展开/收起是就地切换状态，不需要暗示跳转的水波纹。
- *
- * @param expanded 正文是否展开
- * @param onToggle 点击标题行或右侧按钮时切换展开状态
- */
-@Composable
-private fun RecommendationServiceNotice(expanded: Boolean, onToggle: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = MaterialTheme.shapes.large
-    ) {
-        Column(Modifier.fillMaxWidth()) {
-            // 标题行始终可点：图标 + 标题 + 「展开/收起」+ 旋转箭头。
-            // 用无 indication 的 clickable：展开/收起是状态切换而非跳转，
-            // 水波纹会让人误以为要点进另一个页面，这里只用箭头与文字变化做反馈。
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onToggle
-                    )
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Rounded.WarningAmber,
-                    null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.error
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    stringResource(R.string.recommend_notice_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(
-                        if (expanded) R.string.notice_collapse else R.string.notice_expand
-                    ),
-                    style = MaterialTheme.typography.labelMedium
-                )
-                Spacer(Modifier.width(4.dp))
-                // 箭头随展开状态旋转，给出与文字一致的视觉反馈
-                val arrowRotation by animateFloatAsState(
-                    targetValue = if (expanded) 90f else 0f,
-                    animationSpec = tween(220),
-                    label = "noticeArrowRotation"
-                )
-                Icon(
-                    Icons.Default.ArrowForward,
-                    null,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .rotate(arrowRotation)
-                )
-            }
-            // 正文：展开/收起同时做淡入淡出与垂直伸缩，收起后不留空隙
-            AnimatedVisibility(
-                visible = expanded,
-                enter = fadeIn(animationSpec = tween(180)) +
-                    expandVertically(animationSpec = tween(260)),
-                exit = fadeOut(animationSpec = tween(140)) +
-                    shrinkVertically(animationSpec = tween(220))
-            ) {
-                Text(
-                    stringResource(R.string.recommend_notice_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(start = 44.dp, end = 14.dp, bottom = 12.dp)
-                )
-            }
-        }
-    }
-}
-
-/**
- * 下载稳定性提示。
- *
- * 用 surfaceContainerHigh 而非 errorContainer：这只是使用建议，不是警告，
- * 与上方的法规警示牌在视觉上要能区分开。
- */
-@Composable
-private fun RecommendationNetworkNotice() {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = MaterialTheme.shapes.large
-    ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Icon(Icons.Rounded.Info, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(10.dp))
-            Text(
-                stringResource(R.string.recommend_network_tip),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
-}
-
-/**
- * 推荐条目卡片。
- *
- * 水波纹说明：[Card] 的 onClick 重载内部用卡片自身的 [shape] 作为水波纹边界，
- * 因此水波纹与卡片圆角完全一致；同时 [Card] 默认 clip 内容，图标方块也不会溢出。
- */
-@Composable
-private fun RecommendationCard(app: RecommendedApp, iconIndex: Int = 0, onClick: () -> Unit) {
-    val shape = MaterialTheme.shapes.large
-    // 缤纷色彩下每个推荐条目拿不同颜色
-    val (appBg, appFg) = cardIconColors(LocalVibrantTheme.current, iconIndex)
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = shape) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 图标小正方形背景
-            Surface(
-                modifier = Modifier.size(44.dp),
-                color = appBg,
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Box(contentAlignment = Alignment.Center) { Icon(app.icon, null, tint = appFg) }
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(app.name, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(app.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-            }
-            Icon(Icons.Default.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-/**
- * 推荐详情弹窗：展示完整说明，统一一个「下载」按钮：
- * APK 直链走应用内下载，网页/网盘链接交给系统打开。
- */
-@Composable
-private fun RecommendationInfoDialog(
-    app: RecommendedApp,
-    onDownload: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(app.icon, null)
-                Spacer(Modifier.width(10.dp))
-                Text(app.displayName)
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState())
-            ) {
-                Text(app.description)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDownload) {
-                Icon(if (app.isApk) Icons.Default.Download else Icons.Default.Language, null)
-                Spacer(Modifier.width(6.dp))
-                Text(if (app.isApk) stringResource(R.string.dl_title) else stringResource(R.string.dl_open_browser))
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.s071)) } }
-    )
-}
-
-/**
- * 网页/网盘下载的二次说明弹窗：打开浏览器前先说明下载步骤或网盘信息（如蓝奏云提取码），
- * 确认后才跳转。对应原项目 ZexNote 中 AppShare / CoolMonitor 的下载说明弹窗。
- */
-@Composable
-private fun BrowserNoticeDialog(
-    notice: BrowserNotice,
-    onOpen: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(notice.title)) },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState())
-            ) {
-                Text(notice.content)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onOpen) {
-                Icon(Icons.Default.Language, null)
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(notice.confirmLabel))
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.s071)) } }
-    )
-}
-
-/**
- * 下载进度弹窗的宿主：把下载记录的订阅限定在弹窗作用域内，
- * 避免进度高频更新波及上层的推荐卡片列表。
- */
-@Composable
-private fun RecommendationDownloadDialogHost(
-    app: RecommendedApp,
-    downloads: kotlinx.coroutines.flow.Flow<List<DownloadEntity>>,
-    downloadId: String?,
-    onInstall: (DownloadEntity) -> Unit,
-    onCancelDownload: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val records by downloads.collectAsState(initial = emptyList())
-    val record = remember(records, downloadId) { records.firstOrNull { it.id == downloadId } }
-    RecommendationDownloadDialog(
-        app = app,
-        record = record,
-        finished = record?.status == "completed" || record?.status == "hash_mismatch",
-        onInstall = { record?.let(onInstall) },
-        onDismiss = onDismiss,
-        // 取消：停任务并删掉记录与已写入文件，避免半成品残留。
-        // 不依赖 record 是否已回填——记录尚未就绪时按 URL 定位任务。
-        onCancel = { onCancelDownload(); onDismiss() }
-    )
-}
-
-/**
- * 应用内下载进度弹窗：进度直接取自下载记录（与「下载设置 → 下载记录」同一数据源），
- * 下载完成后原地切换为「安装」。
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun RecommendationDownloadDialog(
-    app: RecommendedApp,
-    record: DownloadEntity?,
-    finished: Boolean,
-    onInstall: () -> Unit,
-    onDismiss: () -> Unit,
-    onCancel: () -> Unit
-) {
-    // 取消是用户主动行为，不是失败：只把真正的失败当成错误原因展示
-    val cancelled = record?.status == "cancelled"
-    val failed = record?.status == "failed" || record?.status == "hash_mismatch"
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.s072, app.displayName)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (finished) {
-                    Text(stringResource(R.string.s073))
-                } else if (failed || cancelled) {
-                    Text(record?.errorMessage?.ifBlank { stringResource(R.string.dl_status_failed) } ?: stringResource(R.string.dl_status_failed))
-                } else {
-                    val progress = record?.progress ?: 0
-                    if (progress > 0) {
-                        // 确定态：沿用原来的平滑波浪进度条
-                        WavyProgressBar(progress = progress / 100f, modifier = Modifier.fillMaxWidth())
-                        Text(stringResource(R.string.s075, progress))
-                    } else {
-                        // 连接中：不确定态波浪进度条，无限滚动
-                        LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth(), amplitude = 0.5f, wavelength = 24.dp)
-                        Text(stringResource(R.string.s076))
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (finished) {
-                TextButton(onClick = onInstall) { Icon(Icons.Default.OpenInNew, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.s077)) }
-            }
-        },
-        dismissButton = {
-            Row {
-                if (!finished) {
-                    TextButton(onClick = onCancel) { Text(stringResource(R.string.s078)) }
-                }
-                TextButton(onClick = onDismiss) { Text(if (finished) stringResource(R.string.btn_close) else stringResource(R.string.btn_bg_download)) }
-            }
-        }
-    )
-}
-
-/**
- * 首页「应用推荐」入口卡片。
- *
- * 水波纹说明：使用 [Card] 的 onClick 重载（内部自带与卡片形状一致的 ripple），
- * 不再用 Modifier.clickable（矩形水波纹会超出圆角卡片边界造成错位）。
- */
-@Composable
-private fun AppRecommendationEntry(vibrant: Boolean, onClick: () -> Unit) {
-    val shape = MaterialTheme.shapes.extraLarge
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = shape
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 图标小方块背景
-            val (entryBg, entryFg) = cardIconColors(vibrant, 0)
-            Surface(
-                modifier = Modifier.size(44.dp),
-                color = entryBg,
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Apps, null, tint = entryFg) }
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.s062), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.s081), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(Icons.Default.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
 
 /**
  * 地址栏的护盾标识。
@@ -3253,7 +2977,9 @@ private fun AddressInput(
                             Modifier.fillMaxWidth()
                                 .clip(MaterialTheme.shapes.medium)
                                 .clickable { onValueChange(keyword); onSubmit() }
-                                .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                                // 行高压缩：上下 7dp + 32dp 图标按钮，整行约 44dp（原先 ~60dp），
+                                // 列表更紧凑，键盘上方能同时露出更多内容
+                                .padding(start = 12.dp, end = 4.dp, top = 7.dp, bottom = 7.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -3270,7 +2996,7 @@ private fun AddressInput(
                                 modifier = Modifier.weight(1f)
                             )
                             if (!showSuggestions) {
-                                IconButton(onClick = { onRemoveHistory(keyword) }, modifier = Modifier.size(36.dp)) {
+                                IconButton(onClick = { onRemoveHistory(keyword) }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Default.Close, stringResource(R.string.s094), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             } else {
@@ -3523,38 +3249,100 @@ private fun BookmarkDialog(initial: QuickSite? = null, onSubmit: (QuickSite) -> 
     )
 }
 
+/** 网页 &lt;select&gt; 下拉的展平选项与勾选状态（供 M3 弹窗渲染） */
+private class WebChoiceUi(
+    val prompt: GeckoSession.PromptDelegate.ChoicePrompt,
+    val result: GeckoResult<GeckoSession.PromptDelegate.PromptResponse>,
+    val leaves: List<Pair<GeckoSession.PromptDelegate.ChoicePrompt.Choice, String>>,
+    val multiple: Boolean,
+    val checked: BooleanArray
+)
+
+/** GeckoView 当前挂载的标签 id；只用于切换/销毁时补 onSessionDetached，非 Compose State */
+private class GeckoHostState {
+    var attachedTabId: String? = null
+}
+
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun BrowserScreen(viewModel: BrowserViewModel, settings: BrowserSettings, settingsStore: SettingsStore, onTabs: (Boolean) -> Unit, onDownloads: () -> Unit, onSettings: () -> Unit, onIncognitoHome: () -> Unit, onAllTabsClosed: () -> Unit, onExitIncognito: (String) -> Unit) {
     val tabs by viewModel.tabs.collectAsState()
     val selectedId by viewModel.selectedId.collectAsState()
     val selectedTab = tabs.firstOrNull { it.id == selectedId }
-    // 标签被全部关掉后不再自动补空白 about 标签，这里直接退回首页。
-    // 首次进入时没有标签或标签从非空变为空时，都返回首页。
+    // 视频/页面 HTML5 全屏：隐藏顶栏底栏并进入沉浸式
+    val fullscreenTabId by viewModel.fullscreenId.collectAsState()
+    val isFullscreen = selectedTab != null && fullscreenTabId == selectedTab.id
+    val focusManager = LocalFocusManager.current
+    // 标签被全部关掉后自动补一个普通空白 tab，不再跳首页。
+    // 首页现在就是"空白 tab 的内容"，嵌套在 BrowserScreen 里。
     var previousTabCount by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(tabs.size) {
         val previous = previousTabCount
         previousTabCount = tabs.size
-        if (tabs.isEmpty() && (previous == null || previous > 0)) onAllTabsClosed()
+        if (tabs.isEmpty() && (previous == null || previous > 0)) {
+            viewModel.newTab()
+        }
+    }
+    // 切换 tab（包括新建 tab）时主动清焦点、收键盘。
+    // HomeTabContent 和底部地址栏各有一个 TextField，同时渲染时 Compose 可能自动给其中一个焦点。
+    LaunchedEffect(selectedId) {
+        focusManager.clearFocus(force = true)
     }
     // 只展示与当前标签同类型的标签，避免无痕与普通标签在同一列混合
     val visibleTabs = tabs.filter { it.incognito == (selectedTab?.incognito ?: false) }
-    var input by remember(selectedTab?.id) { mutableStateOf(selectedTab?.url.orEmpty()) }
+    // 标签条的滚动 / 展开 / 关闭动画全部收进 TabStrip 内部；
+    // 这里只保留「展示哪些标签、选中谁」这两个数据入口。
+    var input by remember(selectedTab?.id) {
+        val raw = selectedTab?.url.orEmpty()
+        mutableStateOf(if (raw == "about:blank") "" else raw)
+    }
     var inputFocused by remember { mutableStateOf(false) }
     // 地址栏在根坐标系中的纵向范围：点中它时保留焦点，否则才收起
     var barTop by remember { mutableStateOf(0f) }
     var barBottom by remember { mutableStateOf(0f) }
     // 无痕标签下地址栏用专属紫，不跟随主题；普通浏览仍用主题主色
     val incognitoActive = selectedTab?.incognito == true
-    val focusManager = LocalFocusManager.current
     var downloadUrl by remember { mutableStateOf<String?>(null) }
     var expectedHash by remember { mutableStateOf("") }
     var hashResult by remember { mutableStateOf<String?>(null) }
     var selectedFileName by remember { mutableStateOf("") }
-    var showNewTabDialog by remember { mutableStateOf(false) }
     var showBrowserMenu by remember { mutableStateOf(false) }
     val riskySiteWarnings by viewModel.riskySiteWarnings.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // ── GeckoView 宿主 ──
+    // 空白标签默认不挂会话（连点新建时不能每点一次就重挂一次 compositor）。
+    // 只有 ViewModel 明确通知「这个标签排队了待加载地址」时才挂；挂上后地址自然变成非空白。
+    val sessionAttachRequests = remember { mutableStateListOf<String>() }
+    val requestedAttachIds = sessionAttachRequests.toList()
+    DisposableEffect(viewModel) {
+        viewModel.onSessionLoadRequested = { id ->
+            if (id !in sessionAttachRequests) sessionAttachRequests.add(id)
+        }
+        onDispose { viewModel.onSessionLoadRequested = null }
+    }
+    // 视频全屏时隐藏系统栏（沉浸式）并旋转到横屏，退出或离开页面时恢复
+    DisposableEffect(isFullscreen) {
+        val activity = context as? Activity
+        val window = activity?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        if (controller != null) {
+            if (isFullscreen) {
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        activity?.requestedOrientation = if (isFullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        else ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        onDispose {
+            if (isFullscreen) {
+                controller?.show(WindowInsetsCompat.Type.systemBars())
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            }
+        }
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         // 用户拒绝了通知权限：前台服务仍会运行，但通知栏里看不到任何下载进度
         if (!granted) {
@@ -3598,7 +3386,10 @@ private fun BrowserScreen(viewModel: BrowserViewModel, settings: BrowserSettings
     var clipboardReadCallback by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
 
     LaunchedEffect(selectedTab?.url) {
-        if (!inputFocused) input = selectedTab?.url.orEmpty()
+        if (!inputFocused) {
+            val raw = selectedTab?.url.orEmpty()
+            input = if (raw == "about:blank") "" else raw
+        }
     }
 
     // 当前网址是否已是书签：与首页书签卡片、设置页书签管理共用同一份数据，
@@ -3665,20 +3456,190 @@ private fun BrowserScreen(viewModel: BrowserViewModel, settings: BrowserSettings
             }
         }
     }
+    // ── 网页原生对话框（alert/confirm/prompt/<select>）→ 待决状态，由下方 M3 弹窗统一呈现 ──
+    var pendingWebAlert by remember { mutableStateOf<Pair<GeckoSession.PromptDelegate.AlertPrompt, GeckoResult<GeckoSession.PromptDelegate.PromptResponse>>?>(null) }
+    var pendingWebConfirm by remember { mutableStateOf<Pair<GeckoSession.PromptDelegate.ButtonPrompt, GeckoResult<GeckoSession.PromptDelegate.PromptResponse>>?>(null) }
+    var pendingWebText by remember { mutableStateOf<Pair<GeckoSession.PromptDelegate.TextPrompt, GeckoResult<GeckoSession.PromptDelegate.PromptResponse>>?>(null) }
+    var pendingWebChoice by remember { mutableStateOf<WebChoiceUi?>(null) }
+    // 网页 <select> 下拉 → M3 单选/多选弹窗（optgroup 分组展平缩进，separator 跳过）
+    viewModel.choicePromptHandler = { prompt, result ->
+        val leaves = mutableListOf<Pair<GeckoSession.PromptDelegate.ChoicePrompt.Choice, String>>()
+        fun walk(list: Array<GeckoSession.PromptDelegate.ChoicePrompt.Choice>, depth: Int) {
+            for (c in list) {
+                if (c.separator) continue
+                val children = c.items
+                if (children != null && children.isNotEmpty()) walk(children, depth + 1)
+                else leaves += c to "　".repeat(depth) + (c.label ?: "")
+            }
+        }
+        walk(prompt.choices, 0)
+        pendingWebChoice = WebChoiceUi(prompt, result, leaves, prompt.type == GeckoSession.PromptDelegate.ChoicePrompt.Type.MULTIPLE, BooleanArray(leaves.size) { leaves[it].first.selected })
+    }
+    viewModel.alertPromptHandler = { prompt, result -> pendingWebAlert = prompt to result }
+    viewModel.confirmPromptHandler = { prompt, result -> pendingWebConfirm = prompt to result }
+    viewModel.textPromptHandler = { prompt, result -> pendingWebText = prompt to result }
+
+    // 网页 alert()
+    pendingWebAlert?.let { (prompt, result) ->
+        AlertDialog(
+            onDismissRequest = { result.complete(prompt.dismiss()); pendingWebAlert = null },
+            title = prompt.title?.takeIf { it.isNotBlank() }?.let { { Text(it) } },
+            text = { Text(prompt.message ?: "") },
+            confirmButton = { TextButton(onClick = { result.complete(prompt.dismiss()); pendingWebAlert = null }) { Text(stringResource(R.string.web_dialog_ok)) } }
+        )
+    }
+    // 网页 confirm()
+    pendingWebConfirm?.let { (prompt, result) ->
+        AlertDialog(
+            onDismissRequest = { result.complete(prompt.dismiss()); pendingWebConfirm = null },
+            title = prompt.title?.takeIf { it.isNotBlank() }?.let { { Text(it) } },
+            text = { Text(prompt.message ?: "") },
+            confirmButton = { TextButton(onClick = { result.complete(prompt.confirm(GeckoSession.PromptDelegate.ButtonPrompt.Type.POSITIVE)); pendingWebConfirm = null }) { Text(stringResource(R.string.web_dialog_ok)) } },
+            dismissButton = { TextButton(onClick = { result.complete(prompt.confirm(GeckoSession.PromptDelegate.ButtonPrompt.Type.NEGATIVE)); pendingWebConfirm = null }) { Text(stringResource(R.string.web_dialog_cancel)) } }
+        )
+    }
+    // 网页 prompt() 输入框
+    pendingWebText?.let { (prompt, result) ->
+        var input by remember(prompt) { mutableStateOf(prompt.defaultValue ?: "") }
+        AlertDialog(
+            onDismissRequest = { result.complete(prompt.dismiss()); pendingWebText = null },
+            title = prompt.title?.takeIf { it.isNotBlank() }?.let { { Text(it) } },
+            text = {
+                Column {
+                    val message = prompt.message ?: ""
+                    if (message.isNotBlank()) Text(message)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = input, onValueChange = { input = it }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = { TextButton(onClick = { result.complete(prompt.confirm(input)); pendingWebText = null }) { Text(stringResource(R.string.web_dialog_ok)) } },
+            dismissButton = { TextButton(onClick = { result.complete(prompt.dismiss()); pendingWebText = null }) { Text(stringResource(R.string.web_dialog_cancel)) } }
+        )
+    }
+    // 网页 <select>：单选（点选即确认）/多选（勾选+确定）
+    pendingWebChoice?.let { ui ->
+        AlertDialog(
+            onDismissRequest = { ui.result.complete(ui.prompt.dismiss()); pendingWebChoice = null },
+            title = ui.prompt.title?.takeIf { it.isNotBlank() }?.let { { Text(it) } },
+            text = {
+                // 限高滚动：紧凑行高，避免年份列表这类大选项撑满全屏
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    ui.leaves.forEachIndexed { i, (choice, label) ->
+                        if (ui.multiple) {
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                                    .clickable { ui.checked[i] = !ui.checked[i] }
+                                    .padding(horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(checked = ui.checked[i], onCheckedChange = { ui.checked[i] = it })
+                                Text(label, Modifier.weight(1f))
+                            }
+                        } else {
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                                    .clickable { ui.result.complete(ui.prompt.confirm(choice)); pendingWebChoice = null }
+                                    .padding(horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = ui.checked[i], onClick = { ui.result.complete(ui.prompt.confirm(choice)); pendingWebChoice = null })
+                                Text(label, Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = if (ui.multiple) { {
+                TextButton(onClick = {
+                    val selected = ui.leaves.filterIndexed { idx, _ -> ui.checked[idx] }.map { it.first }.toTypedArray()
+                    ui.result.complete(if (selected.isEmpty()) ui.prompt.dismiss() else ui.prompt.confirm(selected))
+                    pendingWebChoice = null
+                }) { Text(stringResource(R.string.web_dialog_ok)) }
+            } } else { {
+                TextButton(onClick = { ui.result.complete(ui.prompt.dismiss()); pendingWebChoice = null }) { Text(stringResource(R.string.web_dialog_cancel)) }
+            } }
+        )
+    }
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
-            Column(Modifier.fillMaxWidth()) {
-                // 状态栏区域：无痕时用与地址栏同一档淡紫，而不是深紫黑，
-                // 否则截图里会出现「深色状态栏 + 浅紫工具栏」的断层
+            // 视频全屏时隐藏整个顶栏（状态栏占位+标签条+进度条）
+            if (!isFullscreen) Column(Modifier.fillMaxWidth()) {
+                // 状态栏区域
                 Spacer(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars)
                     .background(if (incognitoActive) IncognitoTopBarColor else Color.Transparent))
+                // 标签条：选中居中 / 新建展开 / 关闭收缩 / 手动滑动让位都在 TabStrip 内部
+                TabStrip(
+                    tabs = visibleTabs,
+                    selectedId = selectedId,
+                    incognitoActive = incognitoActive,
+                    onSelect = viewModel::select,
+                    onClose = { id ->
+                        val current = viewModel.tabs.value.firstOrNull { it.id == id }
+                        if (current?.incognito == true && viewModel.tabs.value.count { it.incognito } == 1) {
+                            onExitIncognito(id)
+                        } else {
+                            viewModel.close(id)
+                        }
+                    }
+                )
+                // 进度条：进出用现成的高度展开/收缩动画。
+                // 以前是 if (loading) 直接加删，topBar 高度会在同一帧少掉一条，
+                // 网页（GeckoView）被瞬间顶上去，看起来就是「进度条一消失，网页闪一下」。
+                // expandVertically / shrinkVertically 会让这一条高度逐帧变化，
+                // 下面的网页随之平滑上移。
+                // 进度值先在组合作用域取出：AnimatedVisibility 的 lambda 里无法对可空的
+                // selectedTab 做智能转换，直接引用会编译不过。
+                val progressPercent = selectedTab?.progress ?: 0
+                AnimatedVisibility(
+                    visible = selectedTab != null && selectedTab.loading,
+                    enter = expandVertically(
+                        animationSpec = tween(220, easing = FastOutSlowInEasing),
+                        expandFrom = Alignment.Top
+                    ) + fadeIn(tween(160)),
+                    exit = shrinkVertically(
+                        animationSpec = tween(220, easing = FastOutSlowInEasing),
+                        shrinkTowards = Alignment.Top
+                    ) + fadeOut(tween(160))
+                ) {
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(if (incognitoActive) IncognitoTopBarColor else Color.Transparent)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        WavyProgressBar(
+                            progress = progressPercent / 100f,
+                            modifier = Modifier.fillMaxWidth(),
+                            color = when {
+                                incognitoActive -> IncognitoAccentColor
+                                LocalVibrantTheme.current -> vibrantColorAt((progressPercent / 12).toInt())
+                                else -> null
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        bottomBar = {
+            // 视频全屏时隐藏整个底栏（地址栏+导航按钮）
+            if (!isFullscreen) Column(
+                Modifier.fillMaxWidth()
+                    // 仅地址栏自身聚焦时才把 bottomBar（地址栏+导航按钮）抬到键盘上方；
+                    // 网页 / home 内输入框聚焦时键盘直接覆盖底栏，栏保持原位不抬升。
+                    // 用 imeAnimationTarget（动画终点值）而不是 imePadding()：
+                    // 后者会逐帧跟随键盘滑动，与 GeckoView SurfaceView 的异步重排不同步，
+                    // 滑动缝隙和半透明栏会透出旧帧（残影）；跳变式定位只切换一帧，无残影。
+                    .then(if (inputFocused) Modifier.windowInsetsPadding(WindowInsets.imeAnimationTarget) else Modifier)
+                    .background(
+                    if (incognitoActive) IncognitoTopBarColor else Color.Transparent
+                )
+            ) {
+                // 地址栏（移到底部，导航按钮上方）
                 Box(
                     Modifier.fillMaxWidth()
                         .background(if (incognitoActive) IncognitoTopBarColor else Color.Transparent)
-                        .padding(horizontal = 10.dp)
-                        // 记录地址栏纵向范围，供「点空白处收起输入」判断
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
                         .onGloballyPositioned { coords ->
                             val pos = coords.positionInRoot()
                             barTop = pos.y
@@ -3691,12 +3652,8 @@ private fun BrowserScreen(viewModel: BrowserViewModel, settings: BrowserSettings
                         onSubmit = { viewModel.load(input) },
                         onFocusChange = { inputFocused = it },
                         showSuggestionsPanel = false,
-                        // 无痕标签下用专属紫，与普通标签一眼可分
                         accentColor = if (incognitoActive) IncognitoAccentColor else null,
-                        // 浏览器地址栏比较缩：顶部紧贴状态栏，把高度让给网页与加载条；
-                        // 无痕提示条、进度条、网页内容都能多出一行可视区域
                         compact = true,
-                        // 仅在已加载的 http(s) 页面上显示护盾，空白页/内部页不显示
                         security = selectedTab?.risk?.takeIf {
                             val u = selectedTab.url
                             u.startsWith("http", ignoreCase = true)
@@ -3709,39 +3666,45 @@ private fun BrowserScreen(viewModel: BrowserViewModel, settings: BrowserSettings
                         }
                     )
                 }
-            }
-        },
-        bottomBar = {
-            // 无痕时把导航栏（手势条）那条内边距也染成同色：
-            // navigationBarsPadding 加在内部 GlassSurface 上，它因此不伸到手势条区域，
-            // 这块空白就由外层 Column 的底色补上，否则会露出一条背景色断层。
-            // 普通浏览时外层是 Transparent，表现与改动前完全一致。
-            Column(
-                Modifier.fillMaxWidth().background(
-                    if (incognitoActive) IncognitoTopBarColor else Color.Transparent
-                )
-            ) {
+                // 导航按钮
                 GlassSurface(
                     Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp),
                     tint = if (incognitoActive) IncognitoTopBarColor else null,
                     contentColor = if (incognitoActive) IncognitoBarBackground else null
                 ) {
-                IconButton(onClick = { viewModel.back(onAllTabsClosed) }, enabled = selectedTab?.canGoBack == true || selectedTab?.restrictedEngine != null || selectedTab?.fakeSite != null) { Icon(Icons.Default.ArrowBack, stringResource(R.string.action_back)) }
-                IconButton(onClick = viewModel::forward, enabled = selectedTab?.canGoForward == true) { Icon(Icons.Default.ArrowForward, stringResource(R.string.action_forward)) }
-                // 加载中时变为「停止」：避免用户在卡住的页面无法中断加载；加载完成后恢复为「刷新」
+                IconButton(onClick = { if (isFullscreen) viewModel.exitFullscreen() else viewModel.back(onAllTabsClosed) }, enabled = viewModel.canBack() || selectedTab?.restrictedEngine != null || selectedTab?.fakeSite != null) { Icon(Icons.Default.ArrowBack, stringResource(R.string.action_back)) }
+                IconButton(onClick = viewModel::forward, enabled = viewModel.canForward()) { Icon(Icons.Default.ArrowForward, stringResource(R.string.action_forward)) }
                 if (selectedTab?.loading == true) {
                     IconButton(onClick = viewModel::stopLoading) { Icon(Icons.Default.Close, stringResource(R.string.action_stop_loading)) }
                 } else {
                     IconButton(onClick = viewModel::reload) { Icon(Icons.Default.Refresh, stringResource(R.string.s112)) }
                 }
-                IconButton(onClick = { showNewTabDialog = true }) { Icon(Icons.Default.Add, stringResource(R.string.s113)) }
+                IconButton(onClick = { viewModel.newTab() }) { Icon(Icons.Default.Add, stringResource(R.string.s113)) }
                 IconButton(onClick = { onTabs(selectedTab?.incognito == true) }) {
                     BadgedBox(badge = { Badge { Text(visibleTabs.size.toString()) } }) { Icon(Icons.Default.Tab, stringResource(R.string.s114)) }
+                }
+                val translatingTabIds by viewModel.translatingIds.collectAsState()
+                val translatedTabIds by viewModel.translatedIds.collectAsState()
+                // 只反映「当前标签」的翻译状态，多标签之间互不影响
+                val tabTranslating = selectedTab?.id in translatingTabIds
+                val tabTranslated = selectedTab?.id in translatedTabIds
+                val translateEvent by viewModel.translateEvent.collectAsState()
+                LaunchedEffect(translateEvent) {
+                    translateEvent?.let {
+                        Toast.makeText(context, context.getString(it), Toast.LENGTH_SHORT).show()
+                        viewModel.consumeTranslateEvent()
+                    }
                 }
                 Box {
                     IconButton(onClick = { showBrowserMenu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.s115)) }
                     DropdownMenu(expanded = showBrowserMenu, onDismissRequest = { showBrowserMenu = false }, offset = androidx.compose.ui.unit.DpOffset(0.dp, 48.dp)) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.s116)) }, leadingIcon = { if (selectedTab?.session?.settings?.userAgentOverride?.contains("X11") == true) Icon(Icons.Default.Check, null) else Icon(Icons.Default.Computer, null) }, onClick = { viewModel.toggleDesktopUserAgent(); showBrowserMenu = false })
+                        DropdownMenuItem(
+                            text = { Text(stringResource(if (tabTranslating) R.string.tr_doing else if (tabTranslated) R.string.tr_restore else R.string.tr_page)) },
+                            leadingIcon = { Icon(Icons.Default.Translate, null) },
+                            enabled = !tabTranslating,
+                            onClick = { showBrowserMenu = false; viewModel.toggleTranslatePage() }
+                        )
                         DropdownMenuItem(
                             text = { Text(stringResource(if (bookmarked) R.string.s097 else R.string.s099)) },
                             leadingIcon = { Icon(if (bookmarked) Icons.Default.BookmarkRemove else Icons.Default.BookmarkAdd, null) },
@@ -3751,124 +3714,116 @@ private fun BrowserScreen(viewModel: BrowserViewModel, settings: BrowserSettings
                         DropdownMenuItem(text = { Text(stringResource(R.string.s118)) }, leadingIcon = { Icon(Icons.Default.Settings, null) }, onClick = { showBrowserMenu = false; onSettings() })
                     }
                 }
-                }
+            }
             }
         }
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding)
-                // 地址栏输入态下点页面其他位置即收起键盘与光晕
+        Box(
+            Modifier.fillMaxSize().padding(if (isFullscreen) PaddingValues(0.dp) else padding)
                 .dismissFocusOnOutsideTap(
                     inputFocused,
                     focusManager,
                     inputYRange = if (barBottom > barTop) barTop..barBottom else null
                 )
         ) {
-            // 标签条不再展示：浏览器页只应专注当前网页，标签切换统一走底部工具栏的
-            // 标签管理入口。顶部再堆一排 Chip 会挤压网页可视高度，也容易与地址栏抢注意力。
             if (selectedTab != null) {
+                val url = selectedTab.url
+                val isHomeTab = url.isBlank() || url == "about:blank"
                 Box(modifier = Modifier.fillMaxSize()) {
-                    // 加载进度条叠在网页顶部而非占据一行：
-                    // 原先它作为独立行插入，加载开始/结束时网页会被顶下去再弹回，
-                    // 阅读位置跟着跳动；改成覆盖层后网页高度恒定。
-                    DisposableEffect(selectedTab.id, settings.hardwareAcceleration) {
-                        onDispose { viewModel.onSessionDetached(selectedTab.id) }
-                    }
+                    // GeckoView 常驻：不随 tab 切换销毁/重建。
+                    // 空白标签默认不挂会话，只有「地址非空白」或「UI 明确请求加载」时才挂。
+                    // 连点新建 30 次时：第一下切到空白标签 detach 一次，其余全部 no-op，
+                    // 不会每点一次就重挂一次 compositor（那是旧实现连点卡顿的主因之一）。
                     key(settings.hardwareAcceleration) {
+                        val host = remember { GeckoHostState() }
+                        DisposableEffect(Unit) {
+                            onDispose {
+                                host.attachedTabId?.let { viewModel.onSessionDetached(it) }
+                                host.attachedTabId = null
+                            }
+                        }
                         AndroidView(
                             factory = { ctx ->
+                                host.attachedTabId = null
                                 GeckoView(ctx).apply {
-                                    // 开启硬件加速时保持 GeckoView 默认的 SurfaceView，
-                                    // 不要显式调用 setViewBackend(SURFACE_VIEW)：
-                                    // 该调用会 removeView/addView 重建渲染层，在 Compose 的
-                                    // AndroidView 中会破坏渲染时序，导致网页黑屏。
-                                    // 仅关闭时才切换 TextureView（必须在 setSession 之前）。
                                     if (!settings.hardwareAcceleration) {
                                         runCatching { setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW) }
                                     }
+                                    // 登记视图，供离开本页时抓一帧画面做侧滑返回预览
+                                    viewModel.registerGeckoView(this)
                                 }
                             },
                             update = { view ->
-                                view.setSession(selectedTab.session)
-                                // 会话挂载后再触发待加载地址（外部链接），否则 loadUri 会被丢弃
-                                view.post { viewModel.onSessionAttached(selectedTab.id) }
+                                val shouldAttach = !isHomeTab || selectedTab.id in requestedAttachIds
+                                if (!shouldAttach) {
+                                    if (view.session != null) {
+                                        view.releaseSession()
+                                        host.attachedTabId?.let { viewModel.onSessionDetached(it) }
+                                        host.attachedTabId = null
+                                    }
+                                } else if (view.session !== selectedTab.session) {
+                                    // 只有 session 真的换了才 setSession；同一个 session 不重复挂
+                                    view.setSession(selectedTab.session)
+                                    host.attachedTabId?.takeIf { it != selectedTab.id }
+                                        ?.let { viewModel.onSessionDetached(it) }
+                                    host.attachedTabId = selectedTab.id
+                                    view.post { viewModel.onSessionAttached(selectedTab.id) }
+                                }
                             },
                             modifier = Modifier.fillMaxSize()
+                                .then(
+                                    if (isHomeTab) Modifier.graphicsLayer { alpha = 0f }
+                                        .clickable(enabled = false, onClick = {})
+                                    else Modifier
+                                )
                         )
                     }
-                    // 错误页盖在 GeckoView 之上：失败时页面本身已无内容，
-                    // 但下层仍需保留渲染层，用户重试后无需重建视图。
-                    // 必须写在 Box 内部才能使用 matchParentSize 铺满整个网页区域。
-                    // 提示页优先级：假冒站点 > 受限引擎 > 普通错误页。
-                    // 三者不会同时出现：命中的那个会先 return，不会走到发请求，
-                    // 因此 failed 在拦截时恒为 false。
-                    val fakeSite = selectedTab.fakeSite
-                    val restricted = selectedTab.restrictedEngine
-                    if (fakeSite != null) {
-                        // 假冒站点：只有返回首页，没有继续访问
-                        FakeSiteBlockedView(
-                            url = selectedTab.url,
-                            host = fakeSite,
-                            onBackHome = onAllTabsClosed,
-                            modifier = Modifier.matchParentSize()
+
+                    if (isHomeTab) {
+                        // 空白 tab → 渲染首页主体（叠在 GeckoView 之上，盖住它）
+                        HomeTabContent(
+                            settings = settings,
+                            searchHistory = settings.searchHistory,
+                            onRemoveSearchHistory = { scope.launch { settingsStore.removeSearchHistory(it) } },
+                            setQuickSites = { scope.launch { settingsStore.quickSites(it) } },
+                            onOpen = { address ->
+                                scope.launch { settingsStore.addSearchHistory(address) }
+                                viewModel.load(address)
+                            }
                         )
-                    } else if (restricted != null) {
-                        // 受限搜索引擎：二次确认，确认后只放行这一次
-                        ComplianceConfirmView(
-                            url = selectedTab.url,
-                            host = restricted,
-                            onBackHome = onAllTabsClosed,
-                            onContinue = { viewModel.continueToRestricted(selectedTab.url) },
-                            modifier = Modifier.matchParentSize()
-                        )
-                    } else if (selectedTab.failed) {
-                        PageErrorView(
-                            url = selectedTab.failedUrl.ifBlank { selectedTab.url },
-                            errorCode = selectedTab.errorCode,
-                            errorCategory = selectedTab.errorCategory,
-                            onRetry = { viewModel.reload() },
-                            modifier = Modifier.matchParentSize()
-                        )
-                    }
-                    // 加载进度条：盖在网页顶端，不占布局高度，
-                    // 因此网页不会在加载开始/结束时上下跳动。
-                    // 用回波浪条而不是普通细线：一般进度条在高 DPI 屏上细得看不出动，
-                    // 波浪有上下起伏才看得出进度在走；同时把条体压得比原来更薄。
-                    if (selectedTab.loading) {
-                        val barColor = when {
-                            incognitoActive -> IncognitoAccentColor
-                            LocalVibrantTheme.current -> vibrantColorAt((selectedTab.progress / 12).toInt())
-                            else -> MaterialTheme.colorScheme.primary
+                    } else {
+                        val fakeSite = selectedTab.fakeSite
+                        val restricted = selectedTab.restrictedEngine
+                        if (fakeSite != null) {
+                            FakeSiteBlockedView(
+                                url = selectedTab.url,
+                                host = fakeSite,
+                                onBackHome = onAllTabsClosed,
+                                modifier = Modifier.matchParentSize()
+                            )
+                        } else if (restricted != null) {
+                            ComplianceConfirmView(
+                                url = selectedTab.url,
+                                host = restricted,
+                                onBackHome = onAllTabsClosed,
+                                onContinue = { viewModel.continueToRestricted(selectedTab.url) },
+                                modifier = Modifier.matchParentSize()
+                            )
+                        } else if (selectedTab.failed) {
+                            PageErrorView(
+                                url = selectedTab.failedUrl.ifBlank { selectedTab.url },
+                                errorCode = selectedTab.errorCode,
+                                errorCategory = selectedTab.errorCategory,
+                                onRetry = { viewModel.reload() },
+                                modifier = Modifier.matchParentSize()
+                            )
                         }
-                        WavyProgressBar(
-                            progress = (selectedTab.progress / 100f).coerceIn(0f, 1f),
-                            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-                            color = barColor,
-                            thickness = 3.dp,
-                            wavelength = 18.dp
-                        )
                     }
                 }
             }
         }
     }
 
-    if (showNewTabDialog) {
-        AlertDialog(
-            onDismissRequest = { showNewTabDialog = false },
-            title = { Text(stringResource(R.string.s113)) },
-            text = { Text(stringResource(R.string.s122)) },
-            confirmButton = { TextButton(onClick = { viewModel.newTab(); showNewTabDialog = false; onTabs(false) }) { Text(stringResource(R.string.s123)) } },
-            dismissButton = {
-                TextButton(onClick = {
-                    viewModel.newTab(incognito = true)
-                    showNewTabDialog = false
-                    // 不再跳标签管理，而是进入独立的无痕浏览页
-                    onIncognitoHome()
-                }) { Text(stringResource(R.string.s124)) }
-            }
-        )
-    }
     // 护盾说明弹窗
     securityDetail?.let { (host, assessment) ->
         SecurityDetailDialog(
@@ -4058,185 +4013,88 @@ private fun TabOverview(viewModel: BrowserViewModel, incognitoOnly: Boolean, onI
 @Composable
 private fun DownloadsScreen(viewModel: BrowserViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val downloads by viewModel.downloads.collectAsState(initial = emptyList())
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
-    // 待删除集合与选择状态分开：菜单里的单项删除不应该把页面拖进选择模式
-    var deleteTargets by remember { mutableStateOf(setOf<String>()) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var deleteFiles by remember { mutableStateOf(false) }
-    // 日志面板当前展示的下载项 id（null 表示不展示）。
-    // 存 id 而非快照：列表会因删除/状态变化而刷新，直接持有实体可能拿到已删除的记录
-    var logItemId by remember { mutableStateOf<String?>(null) }
-    // 选择模式：由长按进入，选中为空时自动退出。
-    // 不在判断里掺入删除弹窗开关：那会让弹窗一开就退回浏览态，顶栏标题和全选按钮跟着闪一下
-    val selectionMode = selectedIds.isNotEmpty()
-    // 系统返回键优先退出选择模式，而不是直接关掉整个下载页
-    BackHandler(enabled = selectionMode) { selectedIds = emptySet() }
-    Scaffold(topBar = { TopAppBar(title = { Text(if (!selectionMode) stringResource(R.string.s117) else stringResource(R.string.s137, selectedIds.size)) }, navigationIcon = { IconButton(onClick = { if (selectionMode) selectedIds = emptySet() else onBack() }) { Icon(if (selectionMode) Icons.Default.Close else Icons.Default.ArrowBack, stringResource(if (selectionMode) R.string.s071 else R.string.s063)) } }, actions = { if (selectionMode) IconButton(onClick = { deleteTargets = selectedIds; showDeleteConfirmation = true }) { Icon(Icons.Default.Delete, stringResource(R.string.s138)) } }) }) { padding ->
+    // 滑动删除两段式：先只在列表里隐藏该条并弹「撤销」提示条，超时才真正删除记录。
+    // pendingDeleteIds：已被滑出、等待处理的条目；restoringDirections：已点撤销、正在滑回原位的条目（带原滑动方向）。
+    // 隐藏期间条目仍留在数据库，撤销后原地滑回，超时才调 deleteDownload。
+    var pendingDeleteIds by remember { mutableStateOf(setOf<String>()) }
+    // 撤销中的条目：值 = 原滑动方向 + 恢复序号。序号每撤销一次自增，
+    // 传给卡片用于强制重建全新的 SwipeToDismissBoxState（见 DownloadRecordCard 注释）。
+    var restoringDirections by remember { mutableStateOf(mapOf<String, Pair<SwipeToDismissBoxValue, Int>>()) }
+    var restoreEpoch by remember { mutableStateOf(0) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    fun swipeDelete(item: DownloadEntity, direction: SwipeToDismissBoxValue) {
+        pendingDeleteIds = pendingDeleteIds + item.id
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = context.getString(R.string.dl_removed, item.fileName.truncateMiddle()),
+                actionLabel = context.getString(R.string.dl_undo),
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                // 撤销：条目重新进入列表，卡片按原方向从屏幕外滑回原位，动画完成后清理标记
+                restoreEpoch++
+                restoringDirections = restoringDirections + (item.id to (direction to restoreEpoch))
+            } else {
+                viewModel.deleteDownload(item.id, item.targetUri, false)
+                pendingDeleteIds = pendingDeleteIds - item.id
+            }
+        }
+    }
+    fun copyLink(item: DownloadEntity) {
+        copyDownloadLink(context, item.sourceUrl)
+        scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.dl_copied_snackbar, item.sourceUrl.truncateMiddle())) }
+    }
+    Scaffold(
+        topBar = { TopAppBar(title = { Text(if (selectedIds.isEmpty()) stringResource(R.string.s117) else stringResource(R.string.s137, selectedIds.size)) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, stringResource(R.string.s063)) } }, actions = { if (selectedIds.isNotEmpty()) IconButton(onClick = { showDeleteConfirmation = true }) { Icon(Icons.Default.Delete, stringResource(R.string.s138)) } }) },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
         if (downloads.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text(stringResource(R.string.s139)) }
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                // 全选入口只在选择模式下出现：默认状态不占位置
-                if (selectionMode) {
-                    item {
-                        TextButton(
-                            onClick = { selectedIds = if (selectedIds.size == downloads.size) emptySet() else downloads.map { it.id }.toSet() },
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        ) {
-                            Text(stringResource(if (selectedIds.size == downloads.size) R.string.s140 else R.string.s141))
-                        }
-                    }
-                }
-                itemsIndexed(downloads, key = { _, item -> item.id }) { index, item ->
+            // 展示列表 = 全部 - 正在滑出等待处理的；撤销中的条目要重新出现（滑回动画）
+            val visible = downloads.filterNot { it.id in pendingDeleteIds && it.id !in restoringDirections }
+            LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { TextButton(onClick = { selectedIds = if (selectedIds.size == downloads.size) emptySet() else downloads.map { it.id }.toSet() }) { Text(stringResource(if (selectedIds.size == downloads.size) R.string.s140 else R.string.s141)) } }
+                items(visible, key = { it.id }) { item ->
                     DownloadRecordCard(
-                        item = item,
-                        selected = item.id in selectedIds,
-                        selectionMode = selectionMode,
-                        onSelect = { selectedIds = selectedIds.toggle(item.id) },
-                        onCancel = { viewModel.cancelDownload(item.id) },
-                        onPause = { viewModel.pauseDownload(item.id) },
-                        onResume = { viewModel.resumeDownload(item.id) },
-                        onRetry = { viewModel.retryDownload(item.id) },
-                        onOpen = { openDownload(context, item) },
-                        onDelete = { deleteTargets = setOf(item.id); showDeleteConfirmation = true },
-                        onViewLog = { logItemId = item.id }
-                    )
-                    // 平铺列表靠细分割线划出条目边界，最后一条不画
-                    if (index < downloads.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                    }
-                }
-            }
-        }
-    }
-    // 从最新列表里取；记录已被删除时用副作用清空，不在组合期间直接写状态
-    val logItem = logItemId?.let { id -> downloads.firstOrNull { it.id == id } }
-    LaunchedEffect(logItemId, logItem) {
-        if (logItemId != null && logItem == null) logItemId = null
-    }
-    logItem?.let { item ->
-        DownloadLogSheet(item = item, onDismiss = { logItemId = null })
-    }
-    if (showDeleteConfirmation) AlertDialog(onDismissRequest = { showDeleteConfirmation = false; selectedIds = emptySet(); deleteTargets = emptySet() }, title = { Text(stringResource(R.string.s142)) }, text = { Column { Text(stringResource(R.string.s143, deleteTargets.size)) ; CheckRow(stringResource(R.string.s144), deleteFiles) { deleteFiles = it } } }, confirmButton = { TextButton(onClick = { downloads.filter { it.id in deleteTargets }.forEach { viewModel.deleteDownload(it.id, it.targetUri, deleteFiles) }; Toast.makeText(context, context.getString(R.string.s050), Toast.LENGTH_SHORT).show(); selectedIds = emptySet(); deleteTargets = emptySet(); showDeleteConfirmation = false }) { Text(stringResource(R.string.s145)) } }, dismissButton = { TextButton(onClick = { showDeleteConfirmation = false; selectedIds = emptySet(); deleteTargets = emptySet() }) { Text(stringResource(R.string.s071)) } })
-}
-
-/**
- * 下载失败的日志：底部面板展示该条下载的诊断信息，只提供一个分享入口。
- *
- * 日志不直接铺在列表卡片上：一长串异常栈会淹没「文件到底怎么了」，
- * 用户真正需要的是一个能拿去反馈的文本。
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DownloadLogSheet(item: DownloadEntity, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val configuration = LocalConfiguration.current
-    val logText = remember(item, context, configuration) { buildDownloadLog(context, item) }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(44.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Rounded.Article,
-                            null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(14.dp))
-                Text(
-                    stringResource(R.string.dl_log_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            Surface(
-                modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 320.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Column(
-                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(14.dp)
-                ) {
-                    Text(
-                        logText,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace
+                        item,
+                        item.id in selectedIds,
+                        Modifier.animateItem(),
+                        restoringDirections[item.id]?.first,
+                        restoringDirections[item.id]?.second ?: 0,
+                        { selectedIds = selectedIds.toggle(item.id) },
+                        { viewModel.cancelDownload(item.id) },
+                        { viewModel.pauseDownload(item.id) },
+                        { viewModel.resumeDownload(item.id) },
+                        { openDownload(context, item) },
+                        { copyLink(item) },
+                        { viewModel.enqueueDownload(item.sourceUrl, item.fileName, item.expectedSha256.ifBlank { item.sha256 }) },
+                        { swipeDelete(item, it) },
+                        {
+                            restoringDirections = restoringDirections - item.id
+                            pendingDeleteIds = pendingDeleteIds - item.id
+                        }
                     )
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Button(onClick = { shareDownloadLog(context, item, logText) }) {
-                    Icon(Icons.Rounded.Share, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.dl_log_share))
-                }
-            }
         }
     }
-}
-
-/** 组装一条下载失败的诊断文本：包含文件名、来源、状态与错误信息 */
-private fun buildDownloadLog(context: Context, item: DownloadEntity): String = buildString {
-    appendLine("ZexBrowse ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-    appendLine("Android ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
-    appendLine()
-    appendLine(context.getString(R.string.dl_log_file, item.fileName))
-    appendLine(context.getString(R.string.dl_log_source, item.sourceUrl))
-    appendLine(context.getString(R.string.dl_log_status, downloadStatus(context, item)))
-    appendLine(context.getString(
-        R.string.dl_log_progress,
-        item.progress.toString(),
-        formatBytes(context, item.downloadedBytes),
-        formatBytes(context, item.totalBytes)
-    ))
-    if (item.expectedSha256.isNotBlank()) {
-        appendLine(context.getString(R.string.dl_log_expected_sha256, item.expectedSha256))
-        appendLine(context.getString(R.string.dl_log_actual_sha256, item.sha256.ifBlank { context.getString(R.string.dl_log_hash_missing) }))
-    } else if (item.sha256.isNotBlank()) {
-        appendLine(context.getString(R.string.dl_log_sha256, item.sha256))
-    }
-    appendLine()
-    append(item.errorMessage.ifBlank { context.getString(R.string.dl_log_empty) })
-}.trimEnd()
-
-/** 分享日志文本：优先走系统分享面板，失败时退回剪贴板 */
-private fun shareDownloadLog(context: Context, item: DownloadEntity, logText: String) {
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, item.fileName)
-        putExtra(Intent.EXTRA_TEXT, logText)
-    }
-    runCatching { context.startActivity(Intent.createChooser(intent, context.getString(R.string.dl_log_share))) }
-        .onFailure {
-            // 没有任何应用能接收分享时，退回剪贴板，至少让用户能把日志拷走
-            val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(context.getString(R.string.dl_log_title), logText))
-            Toast.makeText(context, context.getString(R.string.toast_link_copied), Toast.LENGTH_SHORT).show()
-        }
+    if (showDeleteConfirmation) AlertDialog(onDismissRequest = { showDeleteConfirmation = false }, title = { Text(stringResource(R.string.s142)) }, text = { Column { Text(stringResource(R.string.s143, selectedIds.size)) ; CheckRow(stringResource(R.string.s144), deleteFiles) { deleteFiles = it } } }, confirmButton = { TextButton(onClick = { downloads.filter { it.id in selectedIds }.forEach { viewModel.deleteDownload(it.id, it.targetUri, deleteFiles) }; Toast.makeText(context, context.getString(R.string.s050), Toast.LENGTH_SHORT).show(); selectedIds = emptySet(); showDeleteConfirmation = false }) { Text(stringResource(R.string.s145)) } }, dismissButton = { TextButton(onClick = { showDeleteConfirmation = false }) { Text(stringResource(R.string.s071)) } })
 }
 
 private fun Set<String>.toggle(id: String): Set<String> = if (id in this) this - id else this + id
+
+/** 中间省略号截断：保留前 [head] + 后 [tail]，中间用 … 取代。总长度 ≤ head+tail+1 时不截断。 */
+internal fun String.truncateMiddle(head: Int = 10, tail: Int = 8): String {
+    val need = head + tail + 1
+    if (length <= need) return this
+    return take(head) + "…" + takeLast(tail)
+}
 
 @Composable
 private fun HistoryScreen(viewModel: BrowserViewModel, hasSearchHistory: Boolean, onOpen: (String) -> Unit, onBack: () -> Unit) {
@@ -4322,157 +4180,103 @@ private fun copyDownloadLink(context: android.content.Context, url: String) {
     clipboard.setPrimaryClip(android.content.ClipData.newPlainText(context.getString(R.string.s155), url))
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DownloadRecordCard(item: DownloadEntity, selected: Boolean, selectionMode: Boolean, onSelect: () -> Unit, onCancel: () -> Unit, onPause: () -> Unit, onResume: () -> Unit, onRetry: () -> Unit, onOpen: () -> Unit, onDelete: () -> Unit, onViewLog: () -> Unit) {
+private fun DownloadRecordCard(
+    item: DownloadEntity,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    restoreDirection: SwipeToDismissBoxValue? = null,
+    restoreEpoch: Int = 0,
+    onSelect: () -> Unit,
+    onCancel: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onOpen: () -> Unit,
+    onCopyLink: () -> Unit,
+    onRedownload: () -> Unit,
+    onSwipeDelete: (SwipeToDismissBoxValue) -> Unit,
+    onRestoreDone: () -> Unit
+) {
     val context = LocalContext.current
     val running = item.status == "queued" || item.status == "downloading"
     val paused = item.status == "paused"
-    // 真正的失败：中断、网络波动、哈希不符。只有这些情况才有日志可看
-    val failed = item.status == "failed" || item.status == "hash_mismatch"
-    // 取消是用户主动行为，不算失败：只说「已取消」，不报错也不给日志入口
-    val cancelled = item.status == "cancelled"
-    val completed = item.status == "completed"
     var menuExpanded by remember { mutableStateOf(false) }
-    // 不再用卡片包裹：下载列表应采用「直接贴在页面上」的平铺行，
-    // 卡片背景会在密集列表中叠出一堆独立色块，显得碎片化、列表变短。
-    // 选中态用一层淡主题色整行高亮：平铺列表没有卡片底，
-    // 只用主题色很低透明度的叠色，既不跳眼又能与未选中行区分
-    val rowBackground = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-        else Color.Transparent
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(rowBackground)
-                .combinedClickable(
-                    onClick = { if (selectionMode) onSelect() else if (completed) onOpen() },
-                    onLongClick = onSelect
-                )
-                .semantics { if (selectionMode) this.selected = selected }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 选中标识：只在选择模式下出现，用对勾而非复选框
-            if (selectionMode) {
+    // 左右滑动删除记录（只删记录不动文件）：滑过阈值即触发；
+    // 撤销恢复时以原滑动方向为初始位置，靠框架锚点动画滑回原位。
+    // 注意：这里不用 rememberSwipeToDismissBoxState——它内部是 rememberSaveable，
+    // LazyColumn 会按 item key 把「已滑出」的旧状态在撤销重进时灌回来，与下面的
+    // reset 动画竞争后锚点错乱，导致整卡触摸/滑动失效（重进页面才恢复）。
+    // 改为 plain remember + restoreEpoch 手工构造：每次撤销都得到全新状态，无 saveable 残留。
+    val swipeCallback = rememberUpdatedState(onSwipeDelete)
+    val density = LocalDensity.current
+    val dismissState = remember(restoreEpoch) {
+        SwipeToDismissBoxState(
+            initialValue = restoreDirection ?: SwipeToDismissBoxValue.Settled,
+            density = density,
+            confirmValueChange = { value ->
+                if (value == SwipeToDismissBoxValue.StartToEnd || value == SwipeToDismissBoxValue.EndToStart) {
+                    swipeCallback.value(value); true
+                } else false
+            },
+            // 与框架默认一致：滑出过卡片一半宽度即视为删除
+            positionalThreshold = { it * 0.5f }
+        )
+    }
+    // 撤销后：从屏幕外（原滑动那一侧）滑回原位（reset 内部即带弹簧动画的 animateTo(Settled)），
+    // 完成后通知父层清理隐藏标记
+    LaunchedEffect(restoreDirection) {
+        if (restoreDirection != null) {
+            dismissState.reset()
+            onRestoreDone()
+        }
+    }
+    SwipeToDismissBox(
+        state = dismissState,
+        modifier = modifier,
+        backgroundContent = {
+            Box(
+                Modifier.fillMaxSize().padding(vertical = 4.dp).clip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.errorContainer),
+                contentAlignment = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+            ) {
                 Icon(
-                    if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                    contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    Icons.Default.Delete,
+                    stringResource(R.string.s145),
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    tint = MaterialTheme.colorScheme.onErrorContainer
                 )
-                Spacer(Modifier.width(10.dp))
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    item.fileName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                // 状态行：完成且无错误时不显示任何状态文字（不写「下载成功」）；
-                // 失败只给一句带出路的提示，不在这里倾倒日志；
-                // 用户自己取消的只说「下载已取消」，用普通文字色，不营造错误观感
-                val subtitle = when {
-                    cancelled -> stringResource(R.string.dl_err_cancelled)
-                    failed -> stringResource(R.string.dl_failed_hint)
-                    running || paused -> downloadStatus(context, item)
-                    else -> null
+        }
+    ) {
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.Top) {
+                Checkbox(checked = selected, onCheckedChange = { onSelect() })
+                Column(Modifier.fillMaxWidth(0.78f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(item.fileName, style = MaterialTheme.typography.titleMedium)
+                    Text(downloadStatus(context, item), style = MaterialTheme.typography.bodySmall)
+                    if (running || paused) {
+                        WavyProgressBar(progress = item.progress / 100f, modifier = Modifier.fillMaxWidth())
+                        Text("${item.progress}% · ${formatBytes(context, item.downloadedBytes)} / ${formatBytes(context, item.totalBytes)}")
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (running) {
+                                TextButton(onClick = onPause) { Icon(Icons.Default.Pause, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.s156)) }
+                            } else {
+                                TextButton(onClick = onResume) { Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.s157)) }
+                            }
+                            TextButton(onClick = onCancel) { Text(stringResource(R.string.s078)) }
+                        }
+                    } else if (item.status == "completed" || item.status == "hash_mismatch") {
+                        IconButton(onClick = onOpen) { Icon(Icons.Default.OpenInNew, stringResource(R.string.s152)) }
+                    }
+                    if (item.errorMessage.isNotBlank()) Text(item.errorMessage, color = MaterialTheme.colorScheme.error)
+                    if (item.sha256.isNotBlank()) Text("SHA-256：${item.sha256}", style = MaterialTheme.typography.bodySmall)
                 }
-                if (subtitle != null) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (running || paused) {
-                    Spacer(Modifier.height(4.dp))
-                    // 与浏览器顶栏用同一种波浪条：进度变化有平滑插值，
-                    // 不会像普通进度条那样一格一格跳
-                    WavyProgressBar(
-                        progress = (item.progress / 100f).coerceIn(0f, 1f),
-                        modifier = Modifier.fillMaxWidth(),
-                        thickness = 4.dp,
-                        wavelength = 22.dp
-                    )
-                    Text(
-                        "${item.progress}% · ${formatBytes(context, item.downloadedBytes)} / ${formatBytes(context, item.totalBytes)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(Modifier.width(6.dp))
-            // 操作区：一律图标按钮，不铺文字；
-            // 只在选择模式外显示，避免与勾选操作抢点击
-            if (!selectionMode) {
-                when {
-                    running -> {
-                        IconButton(onClick = onPause, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Rounded.Pause, stringResource(R.string.s156), modifier = Modifier.size(20.dp))
-                        }
-                        IconButton(onClick = onCancel, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Close, stringResource(R.string.dl_cancel_download), modifier = Modifier.size(20.dp))
-                        }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.s115)) }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.dl_copy_link)) }, onClick = { menuExpanded = false; onCopyLink() })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.dl_redownload)) }, onClick = { menuExpanded = false; onRedownload() })
                     }
-                    paused -> {
-                        IconButton(onClick = onResume, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Rounded.PlayArrow, stringResource(R.string.s157), modifier = Modifier.size(20.dp))
-                        }
-                        IconButton(onClick = onCancel, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Close, stringResource(R.string.dl_cancel_download), modifier = Modifier.size(20.dp))
-                        }
-                    }
-                    completed -> {
-                        IconButton(onClick = onOpen, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.OpenInNew, stringResource(R.string.s152), modifier = Modifier.size(20.dp))
-                        }
-                    }
-                    // 已取消与失败都给重试：这两类都是「没拿到文件但可以再试一次」，
-                    // 重试是用户在这种状态下最想要的动作，放在行内一键直达
-                    failed || cancelled -> {
-                        IconButton(onClick = onRetry, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Refresh, stringResource(R.string.s437), modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
-            }
-            Box {
-                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.MoreVert, stringResource(R.string.s115), modifier = Modifier.size(20.dp))
-                }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    if (failed) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.dl_view_log)) },
-                            leadingIcon = { Icon(Icons.Rounded.Article, null) },
-                            onClick = { menuExpanded = false; onViewLog() }
-                        )
-                    }
-                    // 行内只留一个重试图标，菜单里再放一份文字版，
-                    // 否则只看图标不一定能认出这是「重试」
-                    if (failed || cancelled) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.s437)) },
-                            leadingIcon = { Icon(Icons.Default.Refresh, null) },
-                            onClick = { menuExpanded = false; onRetry() }
-                        )
-                    }
-                    if (completed) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.dl_open_file)) },
-                            leadingIcon = { Icon(Icons.Default.OpenInNew, null) },
-                            onClick = { menuExpanded = false; onOpen() }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.s145)) },
-                        leadingIcon = { Icon(Icons.Default.Delete, null) },
-                        onClick = { menuExpanded = false; onDelete() }
-                    )
                 }
             }
         }
@@ -6188,6 +5992,9 @@ private fun String.suffixQuery(pair: Pair<String, String>): String = runCatching
 private fun hasRecordAudioPermission(context: Context): Boolean =
     androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
+private fun hasCameraPermission(context: Context): Boolean =
+    androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
 /**
  * 撤销系统录音授权，使 Android 设置同步为「不允许」。
  * 仅 Android 13 及以上支持；系统会在合适时机异步执行撤销，届时应用进程会被结束。
@@ -7026,18 +6833,10 @@ private fun DownloadDialog(url: String, skipResolve: Boolean = false, onDownload
  * 加载进度条（波形）。
  *
  * @param color 可选的波浪颜色；无痕页传专属紫，其余页面为 null（跟随主题 primary）
- * @param thickness 条体总高；调用方按场景给不同尺寸，浏览器顶栏处更薄
- * @param wavelength 波浪长度；条体变薄时同步缩短，否则一个波峰都看不出来
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun WavyProgressBar(
-    progress: Float,
-    modifier: Modifier = Modifier,
-    color: Color? = null,
-    thickness: Dp = 4.dp,
-    wavelength: Dp = 24.dp
-) {
+private fun WavyProgressBar(progress: Float, modifier: Modifier = Modifier, color: Color? = null) {
     val animated by animateFloatAsState(
         targetValue = progress,
         animationSpec = WavyProgressIndicatorDefaults.ProgressAnimationSpec,
@@ -7048,8 +6847,8 @@ private fun WavyProgressBar(
     val barTrackColor = color?.copy(alpha = 0.24f) ?: WavyProgressIndicatorDefaults.trackColor
     LinearWavyProgressIndicator(
         progress = { animated },
-        modifier = modifier.height(thickness),
-        wavelength = wavelength,
+        modifier = modifier,
+        wavelength = 24.dp,
         color = barColor,
         trackColor = barTrackColor
     )
@@ -7294,41 +7093,44 @@ private fun UpdateSettingsSheet(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
             )
-            // 自动检查开关
-            val (autoBg, autoFg) = cardIconColors(LocalVibrantTheme.current, 0)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().toggleable(
-                        value = autoCheck,
-                        role = Role.Switch,
-                        onValueChange = onAutoCheckChange
-                    ).padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // 自动检查开关：Release 版没有自动检查，隐藏这个开关，避免出现「开了却不生效」；
+            // 调试版仍保留，用于验证自动更新链路。
+            if (BuildConfig.DEBUG) {
+                val (autoBg, autoFg) = cardIconColors(LocalVibrantTheme.current, 0)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
                 ) {
-                    Surface(
-                        modifier = Modifier.size(36.dp),
-                        color = autoBg,
-                        shape = MaterialTheme.shapes.medium
+                    Row(
+                        Modifier.fillMaxWidth().toggleable(
+                            value = autoCheck,
+                            role = Role.Switch,
+                            onValueChange = onAutoCheckChange
+                        ).padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.SystemUpdate, null, tint = autoFg, modifier = Modifier.size(20.dp))
+                        Surface(
+                            modifier = Modifier.size(36.dp),
+                            color = autoBg,
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.SystemUpdate, null, tint = autoFg, modifier = Modifier.size(20.dp))
+                            }
                         }
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.s404), style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                stringResource(R.string.s405),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = autoCheck, onCheckedChange = null)
                     }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.s404), style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            stringResource(R.string.s405),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = autoCheck, onCheckedChange = null)
                 }
             }
             // 手动检查按钮：检查中禁用并改文案，避免重复请求
@@ -7774,6 +7576,7 @@ private fun UpdateDownloadDialog(release: ReleaseInfo, onBack: () -> Unit) {
                 when {
                     result != null -> {
                         Text(stringResource(R.string.s435, result!!.file.name))
+                        Text(stringResource(R.string.sha256_value, result!!.sha256), style = MaterialTheme.typography.bodySmall)
                         Text(result!!.file.absolutePath, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     errText != null -> Text(stringResource(R.string.s436, errText), color = MaterialTheme.colorScheme.error)

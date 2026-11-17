@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Zex Translator",
+  "version": "1.0",
+  "description": "ZexBrowse built-in page translator bridge",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "zex-translator@zexbrowse",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": ["nativeMessaging", "nativeMessagingFromContent", "geckoViewAddons"],
+  "host_permissions": ["*://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["content.js"],
+      "all_frames": false,
+      "run_at": "document_idle"
+    }
+  ]
+}
