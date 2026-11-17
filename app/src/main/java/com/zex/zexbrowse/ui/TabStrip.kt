@@ -153,6 +153,9 @@ internal class TabStripController(
     /** 必须在组合期同步调用：同一批 chip 在同一帧共享 lastCreateMs */
     fun classify(id: String): Appearance {
         if (!seenIds.add(id)) return Appearance.OLD
+        // 进程生命周期里的第一个标签（冷启动首页标签）直接按老标签处理：
+        // 软件刚打开时不播 0→自然宽的创建动画，标签应该已经在最终位置。
+        if (seenIds.size == 1) return Appearance.OLD
         val t = now()
         val rapid = t - lastCreateMs < RAPID_CREATE_MS
         lastCreateMs = t
@@ -220,11 +223,17 @@ internal fun TabStrip(
             // 固定半屏内容内边距：任何一项（含首尾）都能滚到正中，
             // 且不会像旧实现那样因为「选中宽变化」改 padding、再反过来触发居中。
             val halfViewport = maxWidth / 2
-            val listState = rememberLazyListState()
+            val density = LocalDensity.current
+            // 冷启动的初始标签是空白页，chip 宽度约 108dp。
+            // 预置一半宽度的滚动偏移，让第一帧就已经在正中，
+            // 避免「先偏右半格、下一帧再被帧循环拉回中间」的闪动。
+            val initialHalfTabPx = with(density) { 54.dp.roundToPx() }
+            val listState = rememberLazyListState(
+                initialFirstVisibleItemScrollOffset = initialHalfTabPx
+            )
             val draggedState = listState.interactionSource.collectIsDraggedAsState()
             val selectedNow = rememberUpdatedState(selectedId)
             val tabsNow = rememberUpdatedState(tabs)
-            val density = LocalDensity.current
 
             LaunchedEffect(Unit) {
                 var lastSid: String? = null
