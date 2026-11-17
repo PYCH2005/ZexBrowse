@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -429,6 +430,13 @@ private fun LazyItemScope.TabChip(
     // 点击里写入、LaunchedEffect 里读取，不需要触发重组。
     val closeDelayMs = remember(tabId) { longArrayOf(CLOSE_SHRINK_MS.toLong()) }
 
+    // 固定槽位宽度：chip 的可见宽度在槽位里从 0 对称长到自然宽 / 对称收回去。
+    // 已有宽度缓存直接用；新标签先按空白标签宽度占位，稳定后校正到实测自然宽。
+    val density = LocalDensity.current
+    var slotWidthPx by remember(tabId) {
+        mutableStateOf(controller.widthOf(tabId) ?: with(density) { 109.dp.roundToPx() })
+    }
+
     LaunchedEffect(tabId) {
         if (isExpand) {
             // 先让「0 宽」真正测量一帧，下一帧恢复自然宽，animateContentSize 才有 0 → 自然宽可播
@@ -437,6 +445,7 @@ private fun LazyItemScope.TabChip(
             delay(EXPAND_MS + 80L)
             expanding = false
             controller.commitWidth(tabId, widthHolder.value)
+            slotWidthPx = widthHolder.value
         } else {
             withFrameNanos { }
             controller.commitWidth(tabId, widthHolder.value)
@@ -472,36 +481,45 @@ private fun LazyItemScope.TabChip(
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    AssistChip(
-        onClick = { if (!closing) onSelect(tabId) },
+    Box(
         modifier = Modifier
-            // 关闭时整块淡出；放在最外层，连背景带文字一起降透明度
-            .graphicsLayer { alpha = closeAlpha }
-            // 外框按动画尺寸裁剪，chip 背景才跟着「长出来 / 收回去」
+            .width(with(density) { slotWidthPx.toDp() })
             .clipToBounds()
             // placement 不做补间：删标签后相邻 chip 必须立刻在最终位置，
             // 否则手指下一次点叉时 chip 还在弹簧/补间里移动，叉子对不上。
-            // 新建时相邻项被「挤开」的过程仍由宽度展开本身逐帧带动。
             .animateItem(
                 fadeInSpec = null,
                 placementSpec = snap(),
                 fadeOutSpec = tween<Float>(160)
-            )
-            .animateContentSize(
-                animationSpec = when {
-                    closing -> tween<IntSize>(CLOSE_SHRINK_MS, easing = ReverseFastOutSlowInEasing)
-                    expanding -> tween<IntSize>(EXPAND_MS, easing = FastOutSlowInEasing)
-                    else -> snap()
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        AssistChip(
+            onClick = { if (!closing) onSelect(tabId) },
+            modifier = Modifier
+                // 关闭时整块淡出；放在最外层，连背景带文字一起降透明度
+                .graphicsLayer { alpha = closeAlpha }
+                // 可见 chip 的裁剪框从中间对称展开 / 收拢
+                .clipToBounds()
+                .animateContentSize(
+                    animationSpec = when {
+                        closing -> tween<IntSize>(CLOSE_SHRINK_MS, easing = ReverseFastOutSlowInEasing)
+                        expanding -> tween<IntSize>(EXPAND_MS, easing = FastOutSlowInEasing)
+                        else -> snap()
+                    },
+                    alignment = Alignment.Center
+                )
+                // 新建首帧 0 宽；关闭时也收 0。其余时候不写死宽度
+                .then(if (!grown || closing) Modifier.width(0.dp) else Modifier)
+                // 内容按自然宽测量，槽位固定，chip 才能从中间向两端展开
+                .wrapContentWidth(unbounded = true, align = Alignment.CenterHorizontally)
+                .onSizeChanged { size ->
+                    widthHolder.value = size.width
+                    if (!expanding && !closing && grown) {
+                        controller.commitWidth(tabId, size.width)
+                        if (slotWidthPx != size.width) slotWidthPx = size.width
+                    }
                 },
-                alignment = Alignment.TopStart
-            )
-            // 新建首帧 0 宽；关闭时也收 0。其余时候不写死宽度
-            .then(if (!grown || closing) Modifier.width(0.dp) else Modifier)
-            .onSizeChanged { size ->
-                widthHolder.value = size.width
-                // 展开中间值绝不入缓存；只在稳定后写，且写前比较旧值
-                if (!expanding && !closing && grown) controller.commitWidth(tabId, size.width)
-            },
         colors = AssistChipDefaults.assistChipColors(
             containerColor = containerColor,
             labelColor = labelColor,
@@ -535,7 +553,8 @@ private fun LazyItemScope.TabChip(
                 }
             }
         }
-    )
+        )
+    }
 }
 
 /** onSizeChanged 只记录自然宽，不参与组合，避免每帧重组 */
